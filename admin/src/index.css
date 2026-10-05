@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=Miniver&family=Outfit:wght@100..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Prata&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*{
+    font-family: Outfit;
+}
+
+select,input,textarea {
+    border: 1px solid #c2c2c2;
+    outline-color: #C586A5;
+    border-radius: 4px;
+}
+
+.active{
+    background-color: #ffebf5;
+    border-color: #C586A5;
+}
+
+@layer base {
+    body { @apply dark:bg-slate-950 dark:text-slate-100; }
+    h1, h2, h3 { @apply dark:text-slate-100; }
+    body, :where(div, nav, a, hr, h1, h2, h3, p, span, b, form, label, button, input, textarea, select, svg) {
+        transition-property: background-color, border-color, fill, stroke, box-shadow;
+        transition-duration: 250ms;
+        transition-timing-function: ease;
+    }
+    :where(h1, h2, h3, p, span, b, a, label, button, input, textarea, select, svg) {
+        transition-property: background-color, color, border-color, fill, stroke, box-shadow;
+    }
+    .dark input:not([type='checkbox']):not([type='radio']):not([type='file']), .dark textarea, .dark select {
+        @apply border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-400 focus:border-amber-400;
+        outline-color: #fbbf24;
+    }
+    .dark input[type='checkbox'], .dark input[type='radio'] { @apply accent-amber-400; }
+    .dark input:disabled, .dark textarea:disabled, .dark select:disabled { @apply bg-slate-800 text-slate-500; }
+    .dark :focus-visible { @apply outline outline-2 outline-offset-2 outline-amber-400; }
+}
+
+@layer components {
+    .theme-icon { @apply transition-[filter] duration-[250ms] dark:invert; }
+    .theme-upload { @apply transition-[filter] duration-[250ms]; }
+}
+
+.dark .theme-upload { filter: invert(1) brightness(1.6); mix-blend-mode: screen; }
+
+.dark .active {
+    @apply bg-slate-800 text-slate-100;
+    border-color: #C586A5;
+}
+
+:root:not(.dark) {
+    --toastify-color-dark: var(--toastify-color-light);
+    --toastify-text-color-dark: var(--toastify-text-color-light);
+}
+
+:root.dark {
+    --toastify-color-light: #0f172a;
+    --toastify-text-color-light: #f1f5f9;
+    --toastify-color-dark: #0f172a;
+    --toastify-text-color-dark: #f1f5f9;
+}
+
+html .Toastify__close-button { color: #000; opacity: 0.3; }
+.dark .Toastify__close-button { color: #f1f5f9; opacity: 0.7; }
+html .Toastify__close-button:hover, html .Toastify__close-button:focus { opacity: 1; }
+
+.dark input:-webkit-autofill {
+    -webkit-text-fill-color: #f1f5f9;
+    caret-color: #f1f5f9;
+    -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

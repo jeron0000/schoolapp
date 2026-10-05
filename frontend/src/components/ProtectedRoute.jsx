@@ -1,0 +1,19 @@
+import { useContext, useEffect, useState } from 'react'
+import { Navigate, Outlet } from 'react-router-dom'
+import { ShopContext } from '../context/ShopContext'
+
+const ProtectedRoute = () => {
+  const { token } = useContext(ShopContext)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    // Allow ShopContext's existing mount effect to restore a saved token first.
+    const timer = window.setTimeout(() => setReady(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  if (!ready) return null
+  return token ? <Outlet /> : <Navigate to='/login' replace />
+}
+
+export default ProtectedRoute

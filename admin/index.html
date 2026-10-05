@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Resolve the initial theme before the app or its styles can paint.
+      (() => {
+        let savedTheme;
+        try { savedTheme = localStorage.getItem('pamo-theme'); } catch {}
+        const preference = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'system';
+        const theme = preference === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : preference;
+        const root = document.documentElement;
+        root.classList.toggle('dark', theme === 'dark');
+        root.style.colorScheme = theme;
+        root.dataset.themePreference = preference;
+      })();
+    </script>
+    <title>PAMOStock Admin Panel</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
