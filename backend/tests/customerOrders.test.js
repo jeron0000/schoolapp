@@ -6,7 +6,7 @@ import authUser from '../middleware/auth.js';
 
 process.env.STRIPE_SECRET_KEY = 'sk_test_customer_orders';
 process.env.JWT_SECRET = 'customer-orders-test-secret';
-const { userOrders } = await import('../controllers/orderController.js');
+const { userOrders, cancelCustomerOrder } = await import('../controllers/orderController.js');
 const { default: router } = await import('../routes/orderRoute.js');
 const userId = '0123456789abcdef01234567';
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
@@ -16,7 +16,7 @@ test('customer orders use the authenticated owner and expose only customer order
     t.mock.method(orderModel, 'find', query => {
         assert.deepEqual(query, { userId });
         return { select(fields) {
-            assert.equal(fields, '_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt');
+            assert.equal(fields, '_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource');
             assert.ok(!fields.split(' ').includes('confirmedBy'));
             return Promise.resolve([record]);
         } };
@@ -46,7 +46,19 @@ test('invalid or absent customer identity cannot issue an unscoped order query',
 
 test('customer endpoint retains token authorization and rejects missing sessions', async () => {
     assert.equal(router.stack.find(layer => layer.route?.path === '/userorders').route.stack[0].handle, authUser);
+    const cancelRoute = router.stack.find(layer => layer.route?.path === '/cancel').route;
+    assert.deepEqual(cancelRoute.stack.map(layer => layer.handle), [authUser, cancelCustomerOrder]);
     const res = response();
     await authUser({ headers: {}, body: {} }, res, () => assert.fail('Unexpected access'));
     assert.equal(res.body.success, false);
+});
+
+test('customer cancellation rejects malformed IDs and missing identity before accessing orders', async t => {
+    t.mock.method(orderModel, 'findOne', () => assert.fail('Unexpected database query'));
+    for (const [body, code] of [[{ orderId: 'bad', userId }, 400], [{ orderId: userId }, 401], [{ orderId: userId, userId: { $ne: null } }, 401]]) {
+        const res = response();
+        await cancelCustomerOrder({ body }, res);
+        assert.equal(res.code, code);
+        assert.equal(res.body.success, false);
+    }
 });

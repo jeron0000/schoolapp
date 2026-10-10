@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useState } from 'react'
-import { ShopContext } from '../context/ShopContext'
+import React, { useContext } from 'react'
+import { ShopContext } from '../context/shopContext'
 import Title from './Title';
 import { Link } from 'react-router-dom';
 import ProductItem from './ProductItem';
@@ -7,12 +7,7 @@ import ProductItem from './ProductItem';
 const BestSeller = () => {
   
     const {products} = useContext(ShopContext);
-    const [BestSeller,setBestSeller] = useState([]);
-
-   useEffect(() => {
-    const bestProduct = products.filter((item) => item.BestSeller);
-    setBestSeller(bestProduct.slice(0,5));
-    }, [products])
+    const BestSeller = products.filter((item) => item.BestSeller).slice(0,5);
     return (
 
     <section className='mt-14 sm:mt-20'>

@@ -30,6 +30,10 @@ export const actionLabels = {
   Claimed: 'Mark Claimed'
 }
 
+export const getOrderStatusLabel = order => order.status === 'Cancelled'
+  ? order.cancellationSource === 'customer' ? 'Cancelled by Customer' : order.cancellationSource === 'admin' ? 'Rejected by Admin' : 'Cancelled'
+  : order.status
+
 export const orderName = order => [order.address?.firstName, order.address?.lastName].filter(Boolean).join(' ') || 'Name not provided'
 export const money = (value, currency) => Number.isFinite(Number(value)) ? `${currency}${Number(value).toFixed(2)}` : 'Unavailable'
 export const orderDate = value => {

@@ -1,7 +1,8 @@
 import axios from 'axios'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { backendUrl, currency } from '../App'
+import { backendUrl, currency } from '../utils/config'
 import CashierTable from '../components/CashierTable'
 import PaymentDetails from '../components/PaymentDetails'
 import { orderName } from '../utils/orderPresentation'
@@ -14,9 +15,10 @@ const filters = [
 ]
 
 const Cashier = ({ token, title, filter, onFilterChange }) => {
+  const { state } = useLocation()
   const [orders, setOrders] = useState([])
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(() => typeof state?.paymentOrderId === 'string' ? state.paymentOrderId : null)
   const [loading, setLoading] = useState(true)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')

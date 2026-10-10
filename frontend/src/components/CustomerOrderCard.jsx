@@ -27,7 +27,7 @@ const CustomerOrderDetails = ({ order, currency, id }) => {
   </div>
 }
 
-const CustomerOrderCard = ({ order, currency }) => {
+const CustomerOrderCard = ({ order, currency, onCancel, cancellationPending }) => {
   const [expanded, setExpanded] = useState(false)
   const [trackingExpanded, setTrackingExpanded] = useState(false)
   const presentation = getOrderPresentation(order)
@@ -42,8 +42,12 @@ const CustomerOrderCard = ({ order, currency }) => {
         <div className='flex shrink-0 items-center justify-between gap-5 sm:justify-end'><div><p className='text-[11px] text-slate-500 dark:text-slate-400'>Total</p><p className='text-sm font-bold text-slate-900 dark:text-slate-100'>{formatMoney(order.amount, currency)}</p></div><span className={'inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold ' + statusStyles[presentation.tone]}><span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current'/>{presentation.label}</span></div>
       </div>
       <div className='mt-4 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50'><OrderItems items={items.slice(0, 2)} currency={currency}/>{items.length > 2 && <button type='button' onClick={() => setExpanded(true)} aria-controls={detailsId} className='mt-2 min-h-11 text-xs font-medium text-slate-600 underline underline-offset-4 dark:text-slate-300'>+{items.length - 2} more {items.length - 2 === 1 ? 'item' : 'items'}</button>}{!items.length && <p className='text-xs text-slate-500 dark:text-slate-400'>Item details unavailable.</p>}</div>
-      {trackingExpanded && <OrderTimeline order={order} id={timelineId}/>}
-      <div className='mt-5 flex flex-col justify-between gap-3 min-[375px]:flex-row'><button type='button' aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(current => !current)} className='inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800'>{expanded ? 'Hide Details' : 'View Details'}</button><button type='button' onClick={() => setTrackingExpanded(current => !current)} aria-expanded={trackingExpanded} aria-controls={timelineId} className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-500'>{trackingExpanded ? 'Hide Tracking' : 'Track Order'}<svg aria-hidden='true' viewBox='0 0 16 16' fill='none' stroke='currentColor' strokeWidth='1.5' className={'h-3.5 w-3.5' + (trackingExpanded ? ' -rotate-90' : '')}><path d='M3 8h10m-4-4 4 4-4 4'/></svg></button></div>
+      {trackingExpanded && order.status !== 'Cancelled' && <OrderTimeline order={order} id={timelineId}/>}
+      <div className='mt-5 flex flex-col justify-between gap-3 min-[375px]:flex-row min-[375px]:flex-wrap'>
+        <button type='button' aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(current => !current)} className='inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800'>{expanded ? 'Hide Details' : 'View Details'}</button>
+        {order.status === 'Order Placed' && <button type='button' disabled={cancellationPending} onClick={() => onCancel(order)} className='inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:opacity-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10'>Cancel Order</button>}
+        {order.status !== 'Cancelled' && <button type='button' onClick={() => setTrackingExpanded(current => !current)} aria-expanded={trackingExpanded} aria-controls={timelineId} className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-500'>{trackingExpanded ? 'Hide Tracking' : 'Track Order'}<svg aria-hidden='true' viewBox='0 0 16 16' fill='none' stroke='currentColor' strokeWidth='1.5' className={'h-3.5 w-3.5' + (trackingExpanded ? ' -rotate-90' : '')}><path d='M3 8h10m-4-4 4 4-4 4'/></svg></button>}
+      </div>
       {expanded && <CustomerOrderDetails order={order} currency={currency} id={detailsId}/>}
     </article>
   )

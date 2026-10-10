@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { backendUrl, currency } from '../App'
+import { backendUrl, currency } from '../utils/config'
 import { money } from '../utils/orderPresentation'
 import axios from 'axios'
 import { toast } from 'react-toastify'
+import StockManagementDrawer from '../components/StockManagementDrawer'
+import { getTotalStock, getStockLabel } from '../../../shared/inventory'
 
 const pageSize = 9
 const controlClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
@@ -12,6 +14,7 @@ const iconPaths = {
   plus: 'M12 5v14M5 12h14',
   reset: 'M3 10a9 9 0 1 1 2 8M3 4v6h6',
   trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',
+  close: 'm6 6 12 12M6 18 18 6',
   previous: 'm14 6-6 6 6 6',
   next: 'm10 6 6 6-6 6',
   image: 'M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M16 7h.01'
@@ -32,6 +35,13 @@ const List = ({ token }) => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
+  const [productToDelete, setProductToDelete] = useState(null)
+  const deleteDialog = useRef(null)
+  const cancelDeleteButton = useRef(null)
+  const deletionPending = useRef(false)
+  const [stockProductId, setStockProductId] = useState(null)
+  const closeStock = useCallback(() => setStockProductId(null), [])
+  const stockProduct = list.find(product => product._id === stockProductId)
 
   const fetchList = async () => {
     setLoading(true)
@@ -49,12 +59,14 @@ const List = ({ token }) => {
   }
 
   const removeProduct = async product => {
-    if (deletingId || !window.confirm(`Delete "${product.name}"? This cannot be undone.`)) return
+    if (!product || deletionPending.current) return
+    deletionPending.current = true
     setDeletingId(product._id)
     try {
       const response = await axios.post(backendUrl + '/api/product/remove', { id: product._id }, { headers: { token } })
       if (response.data.success) {
         toast.success(response.data.message)
+        setProductToDelete(null)
         await fetchList()
       } else {
         toast.error(response.data.message)
@@ -62,6 +74,7 @@ const List = ({ token }) => {
     } catch (error) {
       toast.error(error.message)
     } finally {
+      deletionPending.current = false
       setDeletingId(null)
     }
   }
@@ -69,6 +82,16 @@ const List = ({ token }) => {
   useEffect(() => {
     fetchList()
   }, [])
+
+  useEffect(() => {
+    const dialog = deleteDialog.current
+    if (productToDelete && !dialog.open) {
+      dialog.showModal()
+      cancelDeleteButton.current.focus()
+    } else if (!productToDelete && dialog.open) {
+      dialog.close()
+    }
+  }, [productToDelete])
 
   const categories = [...new Set(list.map(product => product.category).filter(Boolean))].sort()
   const search = query.trim().toLowerCase()
@@ -129,7 +152,7 @@ const List = ({ token }) => {
             <table className='block w-full text-left text-sm sm:table'>
               <caption className='sr-only'>PAMO products with categories, prices, merchandising tags, and delete actions</caption>
               <thead className='hidden border-b border-slate-200 bg-slate-50 text-slate-700 sm:table-header-group dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200'>
-                <tr><th scope='col' className='px-4 py-3 font-medium'>Product</th><th scope='col' className='px-4 py-3 font-medium'>Category</th><th scope='col' className='px-4 py-3 font-medium'>Price</th><th scope='col' className='px-4 py-3 font-medium'>Tags</th><th scope='col' className='px-4 py-3 text-right font-medium'>Action</th></tr>
+                <tr><th scope='col' className='px-4 py-3 font-medium'>Product</th><th scope='col' className='px-4 py-3 font-medium'>Category</th><th scope='col' className='px-4 py-3 font-medium'>Price</th><th scope='col' className='px-4 py-3 font-medium'>Stock</th><th scope='col' className='px-4 py-3 font-medium'>Tags</th><th scope='col' className='px-4 py-3 text-right font-medium'>Action</th></tr>
               </thead>
               <tbody className='block sm:table-row-group'>
                 {visibleProducts.map(product => (
@@ -152,12 +175,17 @@ const List = ({ token }) => {
                       <span className='whitespace-nowrap font-semibold text-slate-950 dark:text-slate-100'>{money(product.price, currency)}</span>
                     </td>
                     <td className='self-center sm:px-4 sm:py-2'>
+                      <span className='block font-semibold'>{getTotalStock(product)}</span>
+                      <span className={'whitespace-nowrap text-xs ' + (getTotalStock(product) === 0 ? 'text-red-600 dark:text-red-400' : getTotalStock(product) <= 5 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400')}>{getStockLabel(getTotalStock(product))}</span>
+                    </td>
+                    <td className='self-center sm:px-4 sm:py-2'>
                       <div className='flex flex-wrap gap-1.5'>
                         {[[product.NewArrival === true, 'NEW'], [product.BestSeller === true, 'BEST SELLER']].filter(([enabled]) => enabled).map(([, label]) => <span key={label} className='whitespace-nowrap rounded-full border border-amber-500 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-400 dark:text-amber-300'>{label}</span>)}
                       </div>
                     </td>
                     <td className='text-right sm:px-4 sm:py-2'>
-                      <button type='button' aria-label={`Delete ${product.name}`} title='Delete product' disabled={deletingId !== null} onClick={() => removeProduct(product)} className='inline-flex h-11 w-11 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-wait disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-400 dark:hover:bg-red-400/20'>
+                      <button type='button' onClick={() => setStockProductId(product._id)} className={controlClass + ' mb-1 mr-2 text-xs'}>Manage Stock</button>
+                      <button type='button' aria-label={`Delete ${product.name}`} title='Delete product' disabled={deletingId !== null} onClick={() => setProductToDelete(product)} className='inline-flex h-11 w-11 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-wait disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-400 dark:hover:bg-red-400/20'>
                         <Icon name='trash' className='h-4 w-4' />
                       </button>
                     </td>
@@ -175,6 +203,19 @@ const List = ({ token }) => {
           </nav>}
         </div>}
       </div>
+      <dialog ref={deleteDialog} aria-labelledby='delete-item-heading' aria-describedby='delete-item-description delete-item-warning' aria-busy={deletingId !== null} onCancel={event => { event.preventDefault(); if (!deletionPending.current) setProductToDelete(null) }} className='!m-auto w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-lg backdrop:bg-slate-950/50 sm:p-6 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'>
+        <div className='flex items-center justify-between gap-3'>
+          <h2 id='delete-item-heading' className='text-lg font-semibold'>Delete Item</h2>
+          <button type='button' aria-label='Close delete confirmation' disabled={deletingId !== null} onClick={() => setProductToDelete(null)} className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800'><Icon name='close' className='h-5 w-5' /></button>
+        </div>
+        <p id='delete-item-description' className='mt-3 break-words text-sm leading-6 text-slate-600 dark:text-slate-300'>Are you sure you want to delete <span className='font-medium text-slate-900 dark:text-slate-100'>"{productToDelete?.name}"</span>?</p>
+        <p id='delete-item-warning' className='mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400'>This action cannot be undone.</p>
+        <div className='mt-6 flex flex-col gap-3 min-[375px]:flex-row'>
+          <button ref={cancelDeleteButton} type='button' disabled={deletingId !== null} onClick={() => setProductToDelete(null)} className='min-h-11 flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-800'>Cancel</button>
+          <button type='button' disabled={deletingId !== null} onClick={() => removeProduct(productToDelete)} className='min-h-11 flex-1 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-wait disabled:opacity-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10'>{deletingId !== null ? 'Deleting...' : 'Delete Item'}</button>
+        </div>
+      </dialog>
+      {stockProduct && <StockManagementDrawer product={stockProduct} token={token} onClose={closeStock} onUpdated={updated => setList(previous => previous.map(product => product._id === updated._id ? updated : product))}/>}
     </section>
   )
 }

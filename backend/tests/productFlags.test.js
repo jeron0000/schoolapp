@@ -25,7 +25,7 @@ test('product creation retains both merchandising flags from multipart and JSON 
     });
     for (const value of ['true', 'false', true, false, undefined]) {
         const res = response();
-        await addProduct({ files: {}, body: { name: 'Flag test', description: 'Fixture', price: '225', category: 'Men', subCategory: 'Topwear', sizes: '["L"]', BestSeller: value, NewArrival: value } }, res);
+        await addProduct({ files: {}, body: { name: 'Flag test', description: 'Fixture', price: '225', category: 'Men', subCategory: 'Topwear', sizes: '["L"]', inventory: '{"L":0}', BestSeller: value, NewArrival: value } }, res);
         assert.equal(res.body.success, true);
         assert.equal(saved.at(-1).BestSeller, value === true || value === 'true');
         assert.equal(saved.at(-1).NewArrival, value === true || value === 'true');

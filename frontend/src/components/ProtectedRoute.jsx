@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
-import { ShopContext } from '../context/ShopContext'
+import { ShopContext } from '../context/shopContext'
 
 const ProtectedRoute = () => {
   const { token } = useContext(ShopContext)

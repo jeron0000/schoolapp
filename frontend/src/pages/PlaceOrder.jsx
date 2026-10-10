@@ -1,15 +1,18 @@
-import React, { useContext, useState } from 'react'
+import React, { useContext, useRef, useState } from 'react'
 import Title from '../components/Title'
 import CartTotal from '../components/CartTotal'
 import { assets } from '../assets/assets'
-import { ShopContext } from '../context/ShopContext'
+import { ShopContext } from '../context/shopContext'
 import axios from 'axios'
 import { toast } from 'react-toastify'
 
 const PlaceOrder = () => {
 
   const [method, setMethod] = useState('cod');
-  const { navigate, backendUrl, token, cartItems, setCartItems, getCartAmount, delivery_fee, products } = useContext(ShopContext);
+  const { navigate, backendUrl, token, cartItems, setCartItems, getCartAmount, delivery_fee, products, getProductsData } = useContext(ShopContext);
+  const pending = useRef(false);
+  const checkoutRequest = useRef(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -32,6 +35,9 @@ const PlaceOrder = () => {
 
   const onSubmitHandler = async (event) => {
     event.preventDefault();
+    if (pending.current) return;
+    pending.current = true;
+    setSubmitting(true);
     try {
 
       console.log(" Submitting Order"); //  DEBUG
@@ -42,6 +48,7 @@ const PlaceOrder = () => {
         for (const item in cartItems[items]) {
           if (cartItems[items][item] > 0) {
             const itemInfo = structuredClone(products.find(product => product._id === items))
+            if (!itemInfo) throw new Error('A product is no longer available. Review your cart.');
             if (itemInfo) {
               itemInfo.size = item
               itemInfo.quantity = cartItems[items][item]
@@ -51,10 +58,19 @@ const PlaceOrder = () => {
         }
       }
 
+      if (!orderItems.length) throw new Error('Your cart is empty.');
+      const signature = JSON.stringify({ items: orderItems.map(item => [item._id, item.size, item.quantity]), method, address: formData });
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signature));
+      const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      try { checkoutRequest.current = JSON.parse(sessionStorage.getItem('pamo-checkout-request')) || checkoutRequest.current; } catch { /* In-memory retries still work when storage is unavailable. */ }
+      if (checkoutRequest.current?.fingerprint !== fingerprint) checkoutRequest.current = { fingerprint, requestId: crypto.randomUUID() };
+      try { sessionStorage.setItem('pamo-checkout-request', JSON.stringify(checkoutRequest.current)); } catch { /* Keep the current request in memory. */ }
+
       let orderData = {
         address: formData,
         items: orderItems,
-        amount: getCartAmount() + delivery_fee
+        amount: getCartAmount() + delivery_fee,
+        requestId: checkoutRequest.current.requestId
       }
 
       console.log("📦 Order Data:", orderData);
@@ -62,18 +78,21 @@ const PlaceOrder = () => {
       switch (method) {
 
         //API Calls for COD
-        case 'cod':
+        case 'cod': {
           const response = await axios.post(backendUrl + '/api/order/place', orderData, { headers: { token } })
           if (response.data.success) {
             setCartItems({})
+            checkoutRequest.current = null;
+            try { sessionStorage.removeItem('pamo-checkout-request'); } catch { /* Optional persistence. */ }
             navigate('/orders')
           } else {
             toast.error(response.data.message)
           }
           break;
+        }
 
           // stripe
-        case 'stripe':
+        case 'stripe': {
           const responseStripe = await axios.post(backendUrl + '/api/order/stripe', orderData, { headers: { token } })
           if (responseStripe.data.success) {
             const {session_url} = responseStripe.data
@@ -82,9 +101,10 @@ const PlaceOrder = () => {
             toast.error(responseStripe.data.message)
           }
           break;
+        }
 
           // paypal
-          case 'paypal':
+          case 'paypal': {
 
           console.log("PayPal selected");
 
@@ -109,14 +129,19 @@ const PlaceOrder = () => {
           }
 
           break; 
+          }
 
 
 
       }
     } catch (error) {
       console.log(error);
-      toast.error(error.message)
+      toast.error(error.response?.data?.message || error.message)
 
+    } finally {
+      await getProductsData();
+      pending.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -162,7 +187,7 @@ const PlaceOrder = () => {
                 </label>
               ))}
             </fieldset>
-            <button type='submit' className='btn-primary mt-6 w-full'>Place order <span aria-hidden='true'>→</span></button>
+            <button type='submit' disabled={submitting} className='btn-primary mt-6 w-full disabled:opacity-50'>{submitting ? 'Placing order…' : 'Place order'} <span aria-hidden='true'>→</span></button>
           </div>
         </aside>
       </form>

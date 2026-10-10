@@ -21,6 +21,9 @@ export const statusStyles = {
 
 export const getOrderPresentation = order => {
   const presentation = statusPresentation[order.status] || { group: null, label: order.status || 'Status unavailable', tone: 'neutral', current: null }
+  if (order.status === 'Cancelled') {
+    return { ...presentation, label: order.cancellationSource === 'customer' ? 'Cancelled by You' : order.cancellationSource === 'admin' ? 'Rejected by Admin' : presentation.label }
+  }
   if (order.status === 'Sent to Cashier' && order.payment === true) {
     return { ...presentation, label: 'Payment Confirmed', tone: 'green', current: 'payment' }
   }

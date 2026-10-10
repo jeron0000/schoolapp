@@ -1,10 +1,10 @@
 import axios from 'axios'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { backendUrl, currency } from '../App'
+import { backendUrl, currency } from '../utils/config'
 import { toast } from 'react-toastify'
 import { assets } from '../assets/assets'
 import OrderDetails, { OrderStatusBadge } from '../components/OrderDetails'
-import { money, orderDate, orderFilters, orderName } from '../utils/orderPresentation'
+import { getOrderStatusLabel, money, orderDate, orderFilters, orderName } from '../utils/orderPresentation'
 
 const Orders = ({ token }) => {
   const [orders, setOrders] = useState([])
@@ -106,7 +106,7 @@ const Orders = ({ token }) => {
                   <td className={cell}><p className='min-w-20 max-w-36 break-words font-medium text-slate-900 dark:text-slate-100'>{orderName(order)}</p></td>
                   <td className={cell + ' whitespace-nowrap font-semibold text-slate-900 dark:text-slate-100'}>{money(order.amount,currency)}</td>
                   <td className={cell}><OrderStatusBadge status={order.payment ? 'Paid' : 'Pending'}/></td>
-                  <td className={cell}><OrderStatusBadge status={order.status}/></td>
+                  <td className={cell}><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)}/></td>
                   <td className={cell + ' whitespace-nowrap'}><p>{date.date}</p><p className='mt-1 text-[11px] text-slate-500 dark:text-slate-400'>{date.time}</p></td>
                   <td className={cell + ' rounded-r-lg border-r'}><button type='button' aria-label={'View order ' + order._id} aria-controls='order-details' aria-pressed={selected} onClick={()=>viewOrder(order)} className='min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 hover:bg-slate-50 focus-visible:outline-amber-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'>View</button></td>
                 </tr>

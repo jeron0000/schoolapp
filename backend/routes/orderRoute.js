@@ -1,9 +1,9 @@
 import express from 'express';
-import { placeOrder, placeOrderStripe, placeOrderPaypal, allOrders, userOrders, updateStatus, verifyStripe, verifyPaypal } from '../controllers/orderController.js';
+import { placeOrder, placeOrderStripe, placeOrderPaypal, allOrders, userOrders, cancelCustomerOrder, updateStatus, verifyStripe, verifyPaypal } from '../controllers/orderController.js';
 import adminAuth from '../middleware/adminAuth.js';
 import authUser from '../middleware/auth.js';
 import cashierAuth from '../middleware/cashierAuth.js';
-import { cashierOrders, confirmCashierPayment } from '../controllers/cashierController.js';
+import { cashierOrders, confirmCashierPayment, cashierDashboardOverview } from '../controllers/cashierController.js';
 
 const orderRouter = express.Router()
 
@@ -13,6 +13,7 @@ orderRouter.post('/status',adminAuth,updateStatus)
 orderRouter.post('/cashier/access', cashierAuth, (req, res) => res.json({ success: true, role: req.staff.role }))
 orderRouter.post('/cashier/list', cashierAuth, cashierOrders)
 orderRouter.post('/cashier/confirm', cashierAuth, confirmCashierPayment)
+orderRouter.get('/cashier/dashboard/overview', cashierAuth, cashierDashboardOverview)
 
 // Payment Features
 orderRouter.post('/place',authUser,placeOrder)
@@ -21,6 +22,7 @@ orderRouter.post('/Paypal',authUser,placeOrderPaypal)
 
 // user features
 orderRouter.post('/userorders',authUser,userOrders)
+orderRouter.post('/cancel',authUser,cancelCustomerOrder)
 
 // Verify payment
 orderRouter.post('/verifyStripe',authUser, verifyStripe)

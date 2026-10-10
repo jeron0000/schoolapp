@@ -6,15 +6,15 @@ import { Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-r
 import Add from './pages/Add'
 import List from './pages/List'
 import Orders from './pages/Orders'
+import Dashboard from './pages/Dashboard'
+import HeroImages from './pages/HeroImages'
 import CashierLayout from './components/CashierLayout'
 import Login from './components/Login'
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useTheme } from './hooks/useTheme'
 import { adminPanelFromSearch } from '../../shared/loginNavigation'
-
-export const backendUrl = import.meta.env.VITE_BACKEND_URL
-export const currency = '$'
+import { backendUrl } from './utils/config'
 
 const App = () => {
   const { theme } = useTheme()
@@ -32,7 +32,7 @@ const App = () => {
     if (nextToken) {
       setPanel(selectedPanel)
       sessionStorage.setItem('pamo-admin-panel', selectedPanel)
-      navigate(selectedPanel === 'cashier' ? '/cashier' : '/orders', { replace: true })
+      navigate(selectedPanel === 'cashier' ? '/cashier' : '/dashboard', { replace: true })
     } else {
       sessionStorage.removeItem('pamo-admin-panel')
       setPanel('pamo')
@@ -61,7 +61,7 @@ const App = () => {
   useEffect(() => {
     if (!token || !requestedPanel) return
     sessionStorage.setItem('pamo-admin-panel', requestedPanel)
-    navigate(requestedPanel === 'cashier' ? '/cashier' : '/orders', { replace: true })
+    navigate(requestedPanel === 'cashier' ? '/cashier' : '/dashboard', { replace: true })
   }, [token, requestedPanel, navigate])
 
   return (
@@ -76,11 +76,14 @@ const App = () => {
           <div className='min-w-0'>
             <Navbar setToken={updateSession} sidebarControls />
             <hr className='dark:border-slate-800' />
-            <div className={pathname === '/orders' ? 'min-w-0 flex-1 p-4 text-slate-600 md:p-6 xl:p-8 dark:text-slate-400' : 'mx-4 my-8 min-w-0 overflow-x-auto text-gray-600 text-base sm:mx-6 lg:mx-8 dark:text-slate-400'}>
+            <div className={pathname === '/orders' || pathname === '/dashboard' ? 'min-w-0 flex-1 p-4 text-slate-600 md:p-6 xl:p-8 dark:text-slate-400' : 'mx-4 my-8 min-w-0 overflow-x-auto text-gray-600 text-base sm:mx-6 lg:mx-8 dark:text-slate-400'}>
               <Routes>
+                <Route path='/' element={<Navigate to='/dashboard' replace />} />
+                <Route path='/dashboard' element={<Dashboard key={token} token={token} />} />
                 <Route path='/add' element={<Add token={token} />} />
                 <Route path='/list' element={<List token={token} />} />
                 <Route path='/orders' element={<Orders token={token} />} />
+                <Route path='/hero-images' element={<HeroImages key={token} token={token} />} />
                 <Route path='/cashier/*' element={<Navigate to='/orders' replace />} />
               </Routes>
 

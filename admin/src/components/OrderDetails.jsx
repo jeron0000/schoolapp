@@ -1,8 +1,8 @@
 import React from 'react'
 import { assets } from '../assets/assets'
-import { actionLabels, money, orderDate, orderName, statusColors } from '../utils/orderPresentation'
+import { actionLabels, getOrderStatusLabel, money, orderDate, orderName, statusColors } from '../utils/orderPresentation'
 
-export const OrderStatusBadge = ({ status }) => <span className={'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium leading-4 ' + (statusColors[status] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')}><span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current'/>{status || 'Unknown'}</span>
+export const OrderStatusBadge = ({ status, label = status }) => <span className={'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium leading-4 ' + (statusColors[status] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')}><span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current'/>{label || 'Unknown'}</span>
 
 const OrderDetails = ({ order, currency, pending, onAction, onClose }) => {
   if (!order) return <aside className='rounded-xl border border-slate-200 bg-white p-6 text-center text-sm dark:border-slate-800 dark:bg-slate-900/60'><h2 className='font-semibold text-slate-900 dark:text-slate-100'>Order Details</h2><p className='mt-3 text-slate-500 dark:text-slate-400'>Select View on an order to see its details.</p></aside>
@@ -21,7 +21,7 @@ const OrderDetails = ({ order, currency, pending, onAction, onClose }) => {
       <div className='flex flex-wrap items-center justify-between gap-3'><h2 className='border-l-4 border-amber-400 pl-3 text-lg font-semibold text-slate-900 dark:text-slate-100'>Order Details</h2><button type='button' onClick={onClose} className='min-h-9 rounded px-2 text-xs hover:bg-slate-100 focus-visible:outline-amber-500 dark:hover:bg-slate-800' aria-label='Close order details'>Close</button></div>
       <p className='mt-4 break-all text-sm font-semibold text-slate-900 dark:text-slate-100'>#{order._id}</p>
       <p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{date.date}{date.time && `, ${date.time}`}</p>
-      <div className='mt-3 flex flex-wrap gap-2'><OrderStatusBadge status={order.status}/><OrderStatusBadge status={order.payment ? 'Paid' : 'Pending'}/></div>
+      <div className='mt-3 flex flex-wrap gap-2'><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)}/><OrderStatusBadge status={order.payment ? 'Paid' : 'Pending'}/></div>
       <div className='my-5 space-y-2 break-words text-xs leading-5'>
         <p className='text-sm font-semibold text-slate-900 dark:text-slate-100'>{orderName(order)}</p>
         {address.email && <p>{address.email}</p>}

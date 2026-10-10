@@ -3,9 +3,11 @@ import { NavLink } from 'react-router-dom'
 import { assets } from '../assets/assets'
 
 const navItems = [
+  { path: '/dashboard', label: 'Dashboard', icon: 'M3 10 12 3l9 7v11h-6v-7H9v7H3Z' },
   { path: '/add', label: 'Add Items', icon: 'M4 4h16v16H4Z M12 8v8M8 12h8' },
   { path: '/list', label: 'List Items', icon: 'M4 4h16v16H4Z M8 8h.01M11 8h5M8 12h.01M11 12h5M8 16h.01M11 16h5' },
-  { path: '/orders', label: 'Orders', icon: 'm12 3 9 5v9l-9 5-9-5V8Z M3 8l9 5 9-5M12 13v9M7.5 5.5l9 5' }
+  { path: '/orders', label: 'Orders', icon: 'm12 3 9 5v9l-9 5-9-5V8Z M3 8l9 5 9-5M12 13v9M7.5 5.5l9 5' },
+  { path: '/hero-images', label: 'Hero Images', icon: 'M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M16 7h.01' }
 ]
 
 const Sidebar = ({ onLogout }) => {

@@ -9,6 +9,7 @@ const productSchema = new mongoose.Schema({
     category: { type: String, required: true },
     subCategory: { type: String, required: true },
     sizes: { type: Array, required: true },
+    inventory: { type: Map, of: { type: Number, min: 0, validate: Number.isSafeInteger }, default: () => ({}) },
     BestSeller: { type: Boolean },
     NewArrival: { type: Boolean, default: false },
     date: { type: Number, required: true }

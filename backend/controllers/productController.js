@@ -1,11 +1,15 @@
 import { v2 as cloudinary } from "cloudinary"
 import mongoose from "mongoose"
 import productModel from "../models/productModel.js"
+import orderModel from "../models/orderModel.js"
+import { adjustInventory, validateInitialInventory } from '../utils/inventory.js'
 
 // function for add product
 const addProduct = async (req, res) => {
     try {
         const { name, description, price, category, subCategory, sizes, BestSeller, NewArrival } = req.body
+        const selectedSizes = JSON.parse(sizes)
+        const inventory = validateInitialInventory(selectedSizes, JSON.parse(req.body.inventory || '{}'))
 
         const image1 = req.files.image1 && req.files.image1[0]
         const image2 = req.files.image2 && req.files.image2[0]
@@ -29,7 +33,8 @@ const addProduct = async (req, res) => {
             subCategory,
             BestSeller: BestSeller === true || BestSeller === "true",
             NewArrival: NewArrival === true || NewArrival === "true",
-            sizes: JSON.parse(sizes),
+            sizes: selectedSizes,
+            inventory,
             image: imagesUrl,
             date: Date.now()
         }
@@ -64,7 +69,11 @@ const listProducts = async (req, res) => {
 const removeProduct = async (req, res) => {
     try {
 
-        await productModel.findByIdAndDelete(req.body.id)
+        await mongoose.connection.transaction(async session => {
+            const reserved = await orderModel.exists({ 'items._id': req.body.id, inventoryStatus: 'reserved', status: { $nin: ['Claimed', 'Completed', 'Cancelled'] } }).session(session)
+            if (reserved) throw new Error('This product has active reserved orders and cannot be deleted yet.')
+            await productModel.findByIdAndDelete(req.body.id).session(session)
+        })
         res.json({ success: true, message: "Product Removed" })
 
     } catch (error) {
@@ -117,4 +126,13 @@ const updateProductFlags = async (req, res) => {
     }
 }
 
-export { addProduct, listProducts, removeProduct, singleProduct, updateProductFlags }
+const updateStock = async (req, res) => {
+    try {
+        const product = await adjustInventory(req.body.id, req.body.adjustments)
+        res.json({ success: true, message: 'Stock updated', product })
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message })
+    }
+}
+
+export { addProduct, listProducts, removeProduct, singleProduct, updateProductFlags, updateStock }

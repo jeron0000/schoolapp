@@ -1,7 +1,8 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
-import { ShopContext } from '../context/ShopContext'
+import { ShopContext } from '../context/shopContext'
 import { assets } from '../assets/assets';
 import CartTotal from '../components/CartTotal';
+import { getSizeStock } from '../../../shared/inventory';
 
 const itemKey = (item) => JSON.stringify([item._id, item.size]);
 
@@ -13,12 +14,13 @@ const CartItem = ({ item, productData, currency, selected, onSelection, updateQu
       <h3 className='text-sm font-semibold leading-5'>{productData.name}</h3>
       <p className='mt-2 break-words text-sm font-semibold'>{currency}{Number(productData.price).toFixed(2)}</p>
       <p className='mt-2 inline-block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400'>Size: {item.size}</p>
+      <p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{getSizeStock(productData, item.size)} available{item.quantity > getSizeStock(productData, item.size) ? ' — reduce quantity or remove this item before checkout.' : ''}</p>
     </div>
     <div className='col-span-3 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-1 sm:col-start-3'>
       <div className='inline-flex items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/40'>
         <button type='button' disabled={disabled || item.quantity <= 1} onClick={()=>updateQuantity(item._id,item.size,item.quantity - 1)} aria-label={'Decrease quantity for ' + productData.name + ', size ' + item.size} className='h-11 w-11 text-lg text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800'>−</button>
-        <input aria-label={'Quantity for ' + productData.name + ', size ' + item.size} onChange={(e)=>{const quantity=Number(e.target.value); if(Number.isInteger(quantity) && quantity >= 1) updateQuantity(item._id,item.size,quantity)}} disabled={disabled} className='h-11 w-9 bg-transparent text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none' type='number' min={1} step={1} value={item.quantity}/>
-        <button type='button' disabled={disabled} onClick={()=>updateQuantity(item._id,item.size,item.quantity + 1)} aria-label={'Increase quantity for ' + productData.name + ', size ' + item.size} className='h-11 w-11 text-lg text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800'>+</button>
+        <input aria-label={'Quantity for ' + productData.name + ', size ' + item.size} onChange={(e)=>{const quantity=Number(e.target.value); if(Number.isInteger(quantity) && quantity >= 1) updateQuantity(item._id,item.size,quantity)}} disabled={disabled} className='h-11 w-9 bg-transparent text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none' type='number' min={1} max={getSizeStock(productData, item.size)} step={1} value={item.quantity}/>
+        <button type='button' disabled={disabled || item.quantity >= getSizeStock(productData, item.size)} onClick={()=>updateQuantity(item._id,item.size,item.quantity + 1)} aria-label={'Increase quantity for ' + productData.name + ', size ' + item.size} className='h-11 w-11 text-lg text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800'>+</button>
       </div>
       <p className='break-all text-sm font-semibold'>{currency}{(productData.price * item.quantity).toFixed(2)}</p>
       <button type='button' disabled={disabled} onClick={()=>updateQuantity(item._id,item.size,0)} className='ml-auto inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10' aria-label={'Remove ' + productData.name + ', size ' + item.size}><img src={assets.bin_icon} className='w-3.5 theme-icon' alt=''/>Remove</button>
@@ -28,7 +30,8 @@ const CartItem = ({ item, productData, currency, selected, onSelection, updateQu
 
 const Cart = () => {
 
-  const { products, currency, cartItems, updateQuantity, navigate } = useContext(ShopContext);
+  const { products, currency, cartItems, updateQuantity, navigate, getProductsData } = useContext(ShopContext);
+  useEffect(() => { getProductsData(); }, [getProductsData]);
 
   const [cartData, setCartData] = useState([]);
   const [unselectedItems, setUnselectedItems] = useState(new Set());

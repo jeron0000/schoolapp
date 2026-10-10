@@ -1,12 +1,12 @@
-import React, { useContext, useEffect } from 'react'
-import { ShopContext } from '../context/ShopContext'
+import React, { useContext, useEffect, useRef } from 'react'
+import { ShopContext } from '../context/shopContext'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import axios from 'axios'
 
 const Verify = () => {
 
-    const { navigate, token, setCartItems, backendUrl } = useContext(ShopContext)
+    const { navigate, token, setCartItems, backendUrl, getProductsData } = useContext(ShopContext)
     const [searchParams] = useSearchParams()
 
     const success = searchParams.get('success')
@@ -14,8 +14,15 @@ const Verify = () => {
 
     // detect payment method (stripe / paypal)
     const method = searchParams.get('method')
+    const verificationRequest = useRef(null)
 
-    const verifyPayment = async () => {
+    useEffect(() => {
+      if (!token) return
+      const requestKey = JSON.stringify([backendUrl, token, method, success, orderId])
+      // Effect replays and navigation identity changes must not repeat a payment request.
+      if (verificationRequest.current === requestKey) return
+      verificationRequest.current = requestKey
+      const verifyPayment = async () => {
         try {
 
             if (!token) {
@@ -37,6 +44,8 @@ const Verify = () => {
                 { headers: { token } }
             )
 
+            await getProductsData()
+            try { sessionStorage.removeItem('pamo-checkout-request'); } catch { /* Optional checkout retry persistence. */ }
             if (response.data.success) {
                 setCartItems({})
                 navigate('/orders')
@@ -48,11 +57,9 @@ const Verify = () => {
             console.log(error);
             toast.error(error.message)
         }
-    }
-
-    useEffect(() => {
+      }
         verifyPayment()
-    }, [token])
+    }, [backendUrl, token, method, success, orderId, getProductsData, setCartItems, navigate])
 
     return (
 

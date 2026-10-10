@@ -1,4 +1,22 @@
 import orderModel from '../models/orderModel.js';
+import { cashierDashboardRange, getCashierDashboardOverview } from '../utils/cashierDashboard.js';
+
+export const cashierDashboardOverview = async (req, res) => {
+    let range;
+    try {
+        if (Object.keys(req.query).some(key => key !== 'range')) {
+            return res.status(400).json({ success: false, message: 'Only the range query parameter is supported.' });
+        }
+        range = cashierDashboardRange(req.query.range);
+    } catch (error) {
+        return res.status(400).json({ success: false, message: error.message });
+    }
+    try {
+        res.json({ success: true, ...await getCashierDashboardOverview(range) });
+    } catch {
+        res.status(500).json({ success: false, message: 'Unable to load cashier dashboard analytics. Please try again.' });
+    }
+};
 
 export const cashierOrders = async (req, res) => {
     try {

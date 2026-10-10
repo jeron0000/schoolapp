@@ -50,7 +50,7 @@ test('valid transitions persist status and the cashier handoff timestamp', async
                     assert.deepEqual(Object.keys(update.$set).sort(), ['sentToCashierAt', 'status']);
                     assert.equal(update.$set.status, next);
                 } else {
-                    assert.deepEqual(update, { $set: { status: next } });
+                    assert.deepEqual(update, { $set: { status: next, ...(next === 'Cancelled' ? { cancellationSource: 'admin' } : {}) } });
                 }
                 assert.deepEqual(options, { new: true });
                 stored = { ...stored, ...update.$set };
@@ -62,6 +62,7 @@ test('valid transitions persist status and the cashier handoff timestamp', async
             assert.equal(res.body.success, true);
             assert.equal(res.body.order.status, next);
             assert.equal(res.body.order.payment, payment);
+            if (next === 'Cancelled') assert.equal(res.body.order.cancellationSource, 'admin');
             if (next === 'Sent to Cashier') assert.equal(res.body.order.sentToCashierAt, stored.sentToCashierAt);
             const listed = response();
             await allOrders({}, listed);

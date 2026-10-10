@@ -12,11 +12,11 @@ import Orders from './pages/Orders'
 import NavBar from './components/NavBar'
 import Footer from './components/Footer'
 import SearchBar from './components/SearchBar'
-import { ToastContainer, toast } from 'react-toastify';
+import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Verify from './pages/Verify'
 import { useTheme } from './hooks/useTheme'
-import { ShopContext } from './context/ShopContext'
+import { ShopContext } from './context/shopContext'
 import ProtectedRoute from './components/ProtectedRoute'
 
 const App = () => {

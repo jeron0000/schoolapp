@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useRef, useState } from 'react'
-import { ShopContext } from '../context/ShopContext'
+import React, { useContext, useMemo, useRef, useState } from 'react'
+import { ShopContext } from '../context/shopContext'
 import { assets } from '../assets/assets';
 import Title from '../components/Title';
 import ProductItem from '../components/ProductItem';
@@ -9,7 +9,6 @@ const Collection = () => {
   
   const { products , search , showSearch } = useContext(ShopContext);
   const [showFilter, setShowFilter] = useState(false);
-  const [filterProducts,setFilterProducts] = useState([]);
   const [category,setCategory] = useState([]);
   const [subCategory,setSubCategory] = useState([]);
   const [sortType,setSortType] = useState('relevant');
@@ -44,7 +43,7 @@ const Collection = () => {
     
   }
 
-  const applyFilter = () => {
+  const filterProducts = useMemo(() => {
     
     let productsCopy = products.slice();
 
@@ -60,36 +59,20 @@ const Collection = () => {
     productsCopy = productsCopy.filter(item => subCategory.includes(item.subCategory));
   }
 
-  setFilterProducts(productsCopy);
-
-}
-
-  const sortProducts = () => {
-    
-    let fpCopy = filterProducts.slice();
-
-    switch (sortType) {
-      case 'low-high':
-      setFilterProducts(fpCopy.sort((a, b) => a.price - b.price));
+     switch (sortType) {
+       case 'low-high':
+       productsCopy.sort((a, b) => a.price - b.price);
       break;
 
       case 'high-low':
-      setFilterProducts(fpCopy.sort((a, b) => b.price - a.price));
+       productsCopy.sort((a, b) => b.price - a.price);
       break;
 
       default:
-        applyFilter();
-        break;
-  }
-}
-
-    useEffect(()=>{
-      applyFilter(); 
-    },[category,subCategory,search,showSearch,products])
-
-    useEffect(()=>{
-      sortProducts(); 
-    },[sortType])
+         break;
+   }
+   return productsCopy;
+  }, [category, subCategory, search, showSearch, products, sortType]);
 
   return (
 

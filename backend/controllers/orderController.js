@@ -3,10 +3,12 @@ import userModel from "../models/userModel.js";
 import Stripe from 'stripe'
 import paypal from '@paypal/checkout-server-sdk';
 import { getAllowedOrderStatuses } from '../utils/orderStatus.js';
+import { createReservedOrder, cancelReservedOrder } from '../utils/inventory.js';
 
 
 // Global variables
 const currency = 'php'
+const paypalCurrency = 'USD'
 const deliveryCharge = 10
 
 // gateway initialize
@@ -18,24 +20,25 @@ const placeOrder = async (req, res) => {
 
     try {
 
-        const { userId, items, amount, address } = req.body;
+        const { userId, items, amount, address, requestId } = req.body;
 
         const orderData = {
             userId,
+            requestId,
             items,
             address,
             amount,
             paymentMethod: "COD",
+            paymentCurrency: currency.toUpperCase(),
             payment: false,
             date: Date.now()
         }
 
-        const newOrder = new orderModel(orderData)
-        await newOrder.save()
+        const newOrder = await createReservedOrder(orderData)
 
         await userModel.findByIdAndUpdate(userId, { cartData: {} })
 
-        res.json({ success: true, message: "Order Placed Successfully" })
+        res.json({ success: true, message: "Order Placed Successfully", orderId: newOrder._id })
 
     } catch (error) {
         console.log(error)
@@ -48,23 +51,24 @@ const placeOrder = async (req, res) => {
 const placeOrderStripe = async (req, res) => {
     try {
 
-        const { userId, items, amount, address } = req.body;
+        const { userId, items, amount, address, requestId } = req.body;
         const { origin } = req.headers;
 
         const orderData = {
             userId,
+            requestId,
             items,
             address,
             amount,
             paymentMethod: "Stripe",
+            paymentCurrency: currency.toUpperCase(),
             payment: false,
             date: Date.now()
         }
 
-        const newOrder = new orderModel(orderData)
-        await newOrder.save()
+        const newOrder = await createReservedOrder(orderData)
 
-        const line_items = items.map((item) => ({
+        const line_items = newOrder.items.map((item) => ({
             price_data: {
                 currency:currency,
                 product_data: {
@@ -91,7 +95,7 @@ const placeOrderStripe = async (req, res) => {
             cancel_url: `${origin}/verify?success=false&orderId=${newOrder._id}&method=stripe`,
             line_items,
             mode: 'payment',
-        })
+        }, { idempotencyKey: String(newOrder._id) })
 
         res.json({success:true,session_url:session.url});
 
@@ -105,14 +109,21 @@ const placeOrderStripe = async (req, res) => {
 // Verify Stripe
 const verifyStripe = async(req,res) => {
     const {orderId, success, userId} = req.body
+    if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId) || typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' })
     
     try {
         if (success === "true") {
-            await orderModel.findByIdAndUpdate(orderId, {payment:true})
+            // First local confirmation time, not provider settlement time; retries preserve history.
+            const order = await orderModel.findOneAndUpdate({ _id: orderId, userId, paymentMethod: 'Stripe', status: { $ne: 'Cancelled' }, inventoryStatus: { $ne: 'released' } }, [
+                { $set: { payment: true, paidAt: { $cond: [
+                    { $eq: ['$payment', true] }, '$paidAt', { $ifNull: ['$paidAt', Date.now()] }
+                ] } } }
+            ], { updatePipeline: true })
+            if (!order) return res.json({ success: false, message: 'This order is unavailable or cancelled.' })
             await userModel.findByIdAndUpdate(userId, {cartData: {}})
             res.json({success:true});
         } else {
-            await orderModel.findByIdAndDelete(orderId)
+            await cancelReservedOrder(orderId, { userId, paymentMethod: 'Stripe', unpaidOnly: true })
             res.json({success:false})
         }
     } catch (error) {
@@ -126,23 +137,24 @@ const placeOrderPaypal = async (req, res) => {
 
     try {
 
-        const { userId, items, amount, address } = req.body;
+        const { userId, items, amount, address, requestId } = req.body;
         const { origin } = req.headers;
 
         const orderData = {
             userId,
+            requestId,
             items,
             address,
             amount,
             paymentMethod: "PayPal",
+            paymentCurrency: paypalCurrency,
             payment: false,
             date: Date.now()
         }
 
-        const newOrder = new orderModel(orderData)
-        await newOrder.save()
+        const newOrder = await createReservedOrder(orderData)
 
-        const total = items.reduce(
+        const total = newOrder.items.reduce(
             (sum, item) => sum + item.price * item.quantity,
             0
         ) + deliveryCharge;
@@ -156,13 +168,14 @@ const placeOrderPaypal = async (req, res) => {
 
         // ✅ Create PayPal order
         const request = new paypal.orders.OrdersCreateRequest();
+        request.headers['PayPal-Request-Id'] = String(newOrder._id);
 
         request.requestBody({
             intent: "CAPTURE",
             purchase_units: [
                 {
                     amount: {
-                        currency_code: "USD",
+                        currency_code: paypalCurrency,
                         value: total.toFixed(2),
                     },
                 },
@@ -191,14 +204,21 @@ const placeOrderPaypal = async (req, res) => {
 // Verify PayPal
 const verifyPaypal = async (req, res) => {
     const { orderId, success, userId } = req.body;
+    if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId) || typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' });
 
     try {
         if (success === "true") {
-            await orderModel.findByIdAndUpdate(orderId, { payment: true });
+            // First local confirmation time, not provider settlement time; retries preserve history.
+            const order = await orderModel.findOneAndUpdate({ _id: orderId, userId, paymentMethod: 'PayPal', status: { $ne: 'Cancelled' }, inventoryStatus: { $ne: 'released' } }, [
+                { $set: { payment: true, paidAt: { $cond: [
+                    { $eq: ['$payment', true] }, '$paidAt', { $ifNull: ['$paidAt', Date.now()] }
+                ] } } }
+            ], { updatePipeline: true });
+            if (!order) return res.json({ success: false, message: 'This order is unavailable or cancelled.' });
             await userModel.findByIdAndUpdate(userId, { cartData: {} });
             res.json({ success: true });
         } else {
-            await orderModel.findByIdAndDelete(orderId);
+            await cancelReservedOrder(orderId, { userId, paymentMethod: 'PayPal', unpaidOnly: true });
             res.json({ success: false });
         }
     } catch (error) {
@@ -226,11 +246,24 @@ const userOrders = async (req, res) => {
         if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId)) {
             return res.status(401).json({ success: false, message: 'Sign in to view your orders.' })
         }
-        const orders = await orderModel.find({ userId }).select('_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt')
+        const orders = await orderModel.find({ userId }).select('_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource')
         res.json({ success: true, orders })
     } catch (error) {
         console.log(error)
         res.json({ success: false, message: error.message })
+    }
+}
+
+const cancelCustomerOrder = async (req, res) => {
+    // authUser replaces body.userId with the verified token identity.
+    const { orderId, userId } = req.body
+    if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId)) return res.status(401).json({ success: false, message: 'Sign in to cancel your order.' })
+    if (typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' })
+    try {
+        const order = await cancelReservedOrder(orderId, { userId, source: 'customer' })
+        res.json({ success: true, message: 'Order cancelled.', order: { _id: order._id, status: order.status, cancellationSource: order.cancellationSource } })
+    } catch (error) {
+        res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to cancel this order. Refresh your orders and try again.' })
     }
 }
 
@@ -245,12 +278,17 @@ const updateStatus = async (req, res) => {
         if (!currentOrder) {
             return res.status(404).json({ success: false, message: 'Order not found.' })
         }
+        if (status === 'Cancelled' && currentOrder.status === 'Cancelled') {
+            return res.json({ success: true, message: 'Order already cancelled', order: { ...currentOrder.toObject(), allowedStatuses: [] } })
+        }
         if (!getAllowedOrderStatuses(currentOrder).includes(status)) {
             return res.status(409).json({ success: false, message: 'This action is not available for the current order and payment status. Refresh orders and try again.' })
         }
-        const order = await orderModel.findOneAndUpdate(
+        const order = status === 'Cancelled' && currentOrder.inventoryStatus === 'reserved'
+            ? await cancelReservedOrder(orderId, { expectedStatus: currentOrder.status, expectedPayment: currentOrder.payment, source: 'admin' })
+            : await orderModel.findOneAndUpdate(
             { _id: orderId, status: currentOrder.status, payment: currentOrder.payment },
-            { $set: { status, ...(status === 'Sent to Cashier' ? { sentToCashierAt: Date.now() } : {}) } },
+            { $set: { status, ...(status === 'Cancelled' ? { cancellationSource: 'admin' } : {}), ...(status === 'Sent to Cashier' ? { sentToCashierAt: Date.now() } : {}) } },
             { new: true }
         )
         if (!order) {
@@ -271,5 +309,6 @@ export {
     placeOrderPaypal,
     allOrders,
     userOrders,
+    cancelCustomerOrder,
     updateStatus
 }

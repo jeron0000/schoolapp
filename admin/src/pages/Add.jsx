@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
-import { backendUrl } from '../App'
+import { backendUrl } from '../utils/config'
 import { toast } from 'react-toastify'
 import { productGenders, productPrograms } from '../../../shared/productTaxonomy'
 
@@ -62,6 +62,7 @@ const Add = ({token}) => {
   const [submitting, setSubmitting] = useState(false);
   const submissionPending = useRef(false);
   const [sizes, setSizes] = useState([]);
+  const [inventory, setInventory] = useState({});
 
   const onSubmitHandler = async (e) => {
     e.preventDefault();
@@ -80,6 +81,10 @@ const Add = ({token}) => {
       formData.append("BestSeller", BestSeller)
       formData.append("NewArrival", NewArrival)
       formData.append("sizes", JSON.stringify(sizes))
+      if (!sizes.length) throw new Error('Select at least one size.');
+      const initialStock = Object.fromEntries(sizes.map(size => [size, Number(inventory[size] ?? 0)]));
+      if (Object.values(initialStock).some(quantity => !Number.isSafeInteger(quantity) || quantity < 0)) throw new Error('Initial stock must be non-negative whole numbers.');
+      formData.append('inventory', JSON.stringify(initialStock))
 
       image1 && formData.append("image1", image1)
       image2 && formData.append("image2", image2)
@@ -97,6 +102,7 @@ const Add = ({token}) => {
           setImage3(false)
           setImage4(false)
           setPrice('')
+          setInventory({})
        } else {
             toast.error(response.data.message)
         }
@@ -179,13 +185,16 @@ const Add = ({token}) => {
             <SectionHeading id='product-options-heading' icon='options' title='Additional Options' description='Set available sizes and special labels for this product.' />
             <div className='mt-4 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]'>
               <fieldset>
-                <legend className={labelClass}>Available Sizes</legend>
+                <legend className={labelClass}>Available Sizes / Initial Stock</legend>
                 <div className='flex flex-wrap gap-2 sm:gap-3'>
-                  {['S', 'M', 'L', 'XL', 'XXL'].map(size => (
+                  {['S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(size => (
                     <button key={size} type='button' aria-pressed={sizes.includes(size)} onClick={() => setSizes(prev => prev.includes(size) ? prev.filter(item => item !== size) : [...prev, size])} className={'min-h-11 min-w-11 rounded-md border px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ' + (sizes.includes(size) ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500')}>
                       {size}
                     </button>
                   ))}
+                </div>
+                <div className='mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3'>
+                  {sizes.map(size => <label key={size} className='min-w-0 text-xs'>{size} stock<input aria-label={`Initial stock for ${size}`} type='number' min='0' step='1' required value={inventory[size] ?? 0} onChange={event => setInventory(previous => ({ ...previous, [size]: event.target.value }))} className={fieldClass + ' mt-1'} /></label>)}
                 </div>
               </fieldset>
               <fieldset className='border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0 dark:border-slate-800'>
