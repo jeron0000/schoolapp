@@ -74,5 +74,5 @@ test('missing products and database failures return the existing error response 
     update.mock.mockImplementation(async () => { throw new Error('Database unavailable'); });
     const failed = response();
     await updateProductFlags({ body: { id, NewArrival: true } }, failed);
-    assert.deepEqual(failed.body, { success: false, message: 'Database unavailable' });
+    assert.deepEqual(failed.body, { success: false, message: 'Unable to update product flags. Please try again.' });
 });

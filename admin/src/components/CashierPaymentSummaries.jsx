@@ -25,9 +25,11 @@ const summaryMessage = (status, payments, validRow, name, emptyMessage) => {
 }
 
 export const AwaitingPaymentSummary = ({ status, payments, paymentsPath, formatCurrency }) => {
-  const message = summaryMessage(status, payments, validAwaiting, 'awaiting payments', 'No payments are currently awaiting confirmation.')
-  if (message) return <div aria-busy={status === 'loading'} className='flex min-h-28 min-w-0 flex-1 items-center justify-center py-6 sm:min-h-32'>
+  const message = summaryMessage(status, payments, validAwaiting, 'awaiting payments', 'Nothing needs confirmation.')
+  if (message) return <div data-empty={message === 'Nothing needs confirmation.' ? '' : undefined} aria-busy={status === 'loading'} className='cashier-dashboard-empty flex min-h-28 min-w-0 flex-1 flex-col items-center justify-center py-6 sm:min-h-32'>
+    {message === 'Nothing needs confirmation.' && <span aria-hidden='true' className='cashier-dashboard-empty-symbol'>—</span>}
     <p role='status' className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
+    {message === 'Nothing needs confirmation.' && <p className='cashier-dashboard-empty-detail'>The queue is current, not date-filtered.</p>}
   </div>
 
   return <div className='min-w-0 pt-4 [container-type:inline-size]'>
@@ -60,11 +62,13 @@ export const AwaitingPaymentSummary = ({ status, payments, paymentsPath, formatC
   </div>
 }
 
-export const RecentPaymentsSummary = ({ status, payments, complete, formatCurrency }) => {
-  const emptyMessage = complete === false ? 'No dated confirmed payments in the available data for this period.' : 'No dated confirmed payments for this period.'
+export const RecentPaymentsSummary = ({ status, payments, complete, formatCurrency, rangeLabel = 'this period' }) => {
+  const emptyMessage = complete === false ? 'No dated confirmed payments in the available data for this period.' : `No confirmed payments for ${rangeLabel}.`
   const message = summaryMessage(status, payments, validRecent, 'recent payments', emptyMessage)
-  if (message) return <div aria-busy={status === 'loading'} className='flex min-h-28 min-w-0 flex-1 items-center justify-center py-6 sm:min-h-32'>
+  if (message) return <div data-empty={message === emptyMessage ? '' : undefined} aria-busy={status === 'loading'} className='cashier-dashboard-empty flex min-h-28 min-w-0 flex-1 flex-col items-center justify-center py-6 sm:min-h-32'>
+    {message === emptyMessage && <span aria-hidden='true' className='cashier-dashboard-empty-symbol'>—</span>}
     <p role='status' className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
+    {message === emptyMessage && <p className='cashier-dashboard-empty-detail'>{complete === false ? 'Historical coverage is incomplete; these records are not guaranteed lifetime totals.' : 'Confirmed transactions will be listed here.'}</p>}
   </div>
 
   return <div className='min-w-0 pt-4 [container-type:inline-size]'>

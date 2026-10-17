@@ -1,20 +1,16 @@
-import jwt from 'jsonwebtoken'
+import { verifyAuthToken, rejectSession } from '../utils/authTokens.js';
 
 const adminAuth = async (req, res, next) => {
+    let claims;
     try {
-        const { token } = req.headers
-        if (!token) {
-            return res.json({ success: false, message: "Not Authorized Login Again" })
-        }
-        const token_decode = jwt.verify(token,process.env.JWT_SECRET);
-        if (token_decode !== process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD) {
-            return res.json({ success: false, message: "Not Authorized Login Again" })
-        }
-        next()
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        claims = verifyAuthToken(req.headers.token);
+    } catch {
+        return rejectSession(res);
     }
-}
+    if (claims.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Administrator access required.' });
+    }
+    next();
+};
 
-export default adminAuth
+export default adminAuth;

@@ -1,16 +1,45 @@
-# React + Vite
+# SmartStock student storefront
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite customer application. Start with the root [setup, architecture, and
+testing guide](../README.md). Installation includes root, backend, storefront,
+and Admin packages because existing shared login and tests cross directories.
 
-Currently, two official plugins are available:
+## Local commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+From `frontend/`:
 
-## React Compiler
+```powershell
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Development uses localhost port 5173; preview uses 4173 after a build. The API runs
+separately. Local configuration names are `VITE_BACKEND_URL` and `VITE_ADMIN_URL`;
+never put private backend values into browser-visible variables.
 
-## Expanding the ESLint configuration
+## Source ownership
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `src/pages/`: routed customer screens.
+- `src/components/`: storefront presentation and component styles.
+- `src/context/ShopContext.jsx`: public context and session/cart coordination.
+- `src/utils/cartSync.js`: cart sequencing, checkout synchronization, optimistic
+  updates, rollback, and session isolation.
+- `src/hooks/`, `src/context/ThemeContext.jsx`: Hero loading and theme integration.
+- `../shared/`: login, session policy/hooks, cart/inventory contracts, PHP money,
+  taxonomy, and refund presentation.
+
+`vite.config.js` owns local server access; `tailwind.config.js` scans shared JSX.
+Shared login owns its imagery and icons under `../shared/`. Storefront foundation
+CSS imports shared font/tokens/typography before its own navigation/Hero rules;
+the login adapter preserves that stylesheet order. Shared icons resolve through
+the storefront's declared Lucide package.
+
+## Tests
+
+There is no package `test` script. See the [root testing guide](../README.md#verification-commands-and-ownership)
+for Node test-runner commands and the Vite worker limitation. `tests/` also owns
+staff rendering regressions importing Admin components, so the Admin installation
+must remain available. Database integration is separately opt-in; mocked tests
+are not proof of live database or browser behavior.

@@ -1,4 +1,4 @@
-import React, { useContext } from 'react'
+import React from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import Home from './pages/Home'
 import Collection from './pages/Collection'
@@ -11,25 +11,21 @@ import PlaceOrder from './pages/PlaceOrder'
 import Orders from './pages/Orders'
 import NavBar from './components/NavBar'
 import Footer from './components/Footer'
-import SearchBar from './components/SearchBar'
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Verify from './pages/Verify'
 import { useTheme } from './hooks/useTheme'
-import { ShopContext } from './context/shopContext'
 import ProtectedRoute from './components/ProtectedRoute'
 
 const App = () => {
   const { theme } = useTheme()
-  const { token } = useContext(ShopContext)
   const { pathname } = useLocation()
   return (
     
     <div className='flex min-h-screen flex-col'>
     <ToastContainer theme={theme}/>
     {pathname !== '/login' && <NavBar />}
-    <main id='main-content' className={(pathname === '/' || pathname === '/login' ? '' : 'content-container ') + 'flex-1'}>
-    {token && pathname !== '/login' && <SearchBar />}
+    <main id='main-content' className={(pathname === '/' || pathname === '/login' || pathname === '/collection' || pathname === '/about' ? '' : 'content-container ') + 'flex-1'}>
     <Routes>
       <Route path='/login' element={<Login/>} />
       <Route element={<ProtectedRoute/>}>

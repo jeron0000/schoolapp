@@ -1,75 +1,19 @@
-import userModel from "../models/userModel.js";
+import { getCartSnapshot, mutateCart, validateCartRequest } from '../utils/cart.js';
 
-
-// add products to user cart
-const addToCart = async (req, res) => {
+const cartHandler = operation => async (req, res) => {
     try {
-
-        const { userId, itemId, size } = req.body
-
-        const userData = await userModel.findById(userId)
-        let cartData = await userData.cartData;
-
-        if (cartData[itemId]) {
-            if (cartData[itemId][size]) {
-                cartData[itemId][size] += 1
-            }
-            else {
-                cartData[itemId][size] = 1
-            }
-        } else {
-            cartData[itemId] = {}
-            cartData[itemId][size] = 1
-        }
-
-        await userModel.findByIdAndUpdate(userId, { cartData })
-
-        res.json({ success: true, message: "Item added to cart successfully" })
-
+        validateCartRequest(req.body, operation);
+        const snapshot = operation === 'get' ? await getCartSnapshot(req.body.userId) : await mutateCart(req.body, operation);
+        return res.json({ success: true, ...snapshot,
+            ...(operation === 'get' ? {} : { message: operation === 'add' ? 'Item added to cart successfully' : 'Cart updated successfully' }) });
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        return res.status(error.status || 503).json({ success: false,
+            message: error.status ? error.message : 'Unable to save your cart. Please try again.',
+            ...(error.snapshot || {}) });
     }
-}
+};
 
-// update user cart
-const updateCart = async (req, res) => {
-    try {
-
-        const { userId, itemId, size, quantity } = req.body
-
-        const userData = await userModel.findById(userId)
-        let cartData = await userData.cartData;
-
-        cartData[itemId][size] = quantity
-
-        await userModel.findByIdAndUpdate(userId, { cartData })
-        res.json({ success: true, message: "Cart Updated successfully" })
-
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-}
-
-// get user cart data
-const getUserCart = async (req, res) => {
-
-    try {
-
-        const { userId } = req.body
-
-        const userData = await userModel.findById(userId)
-        let cartData = await userData.cartData;
-
-        res.json({ success: true, cartData: cartData });
-
-
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-
-}
-
-export { addToCart, updateCart, getUserCart }
+const addToCart = cartHandler('add');
+const updateCart = cartHandler('update');
+const getUserCart = cartHandler('get');
+export { addToCart, updateCart, getUserCart };

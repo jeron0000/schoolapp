@@ -1,0 +1,161 @@
+/* Receipt directory presentation; Payments and Transactions retain their styles. */
+.cashier-receipts-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--pamo-color-border-default);
+  border-left: 3px solid var(--pamo-color-brand-yellow);
+  border-radius: 8px;
+  background: var(--pamo-color-surface-default);
+}
+.cashier-receipts-notice h2 {
+  color: var(--pamo-color-accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.cashier-receipts-notice p {
+  margin-top: 10px;
+  color: var(--pamo-color-text-secondary);
+  font-size: 12px;
+}
+.cashier-receipts-notice > span {
+  padding: 10px 18px;
+  border-radius: 6px;
+  background: var(--pamo-color-surface-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cashier-receipts-v2 .cashier-payments-list,
+.cashier-receipts-v2 .cashier-payment-details-empty {
+  min-height: 720px;
+}
+.cashier-receipts-v2 .cashier-payment-record-main > strong:first-child {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.cashier-receipt-number-label {
+  display: none;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--pamo-color-text-secondary);
+}
+.cashier-receipts-v2 .cashier-payment-record-meta {
+  gap: 16px;
+  padding-block: 18px;
+}
+.cashier-receipt-summary > strong {
+  display: block;
+  font-size: clamp(23px, 2vw, 28px);
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.cashier-receipt-summary > h3 {
+  color: var(--pamo-color-accent-text);
+}
+.cashier-receipt-details {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+}
+.cashier-receipt-details .cashier-payment-details-heading {
+  flex-shrink: 0;
+}
+.cashier-receipt-details .cashier-payment-details-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.cashier-receipt-details .cashier-payment-items ul {
+  overflow: visible;
+}
+.cashier-receipt-details .cashier-payment-totals > div:last-child dd {
+  line-height: 1.3;
+}
+@media (min-width: 1280px) {
+  .cashier-receipts-v2 .cashier-payment-record-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cashier-receipts-v2 .cashier-payment-record-meta > p {
+    grid-column: auto;
+  }
+}
+@media (max-width: 1279px) {
+  .cashier-receipts-v2 .cashier-payment-details-empty {
+    display: none;
+  }
+  .cashier-receipt-number-label {
+    display: block;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-main > strong:first-child {
+    font-size: 20px;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-amount {
+    font-size: 17px;
+  }
+  .cashier-receipts-v2 .cashier-payment-record {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .cashier-receipts-v2 .cashier-payment-record-main {
+    display: contents;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-student {
+    grid-row: 2;
+    margin-top: 12px;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-receipt {
+    grid-row: 3;
+    margin-top: 14px;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-meta {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    margin-top: 14px;
+    border-top: 1px solid var(--pamo-color-border-default);
+  }
+  .cashier-receipts-v2 .cashier-payment-record button {
+    grid-column: 1 / -1;
+    grid-row: 5;
+  }
+}
+@media (max-width: 767px) {
+  .cashier-receipt-details {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+  .cashier-receipts-v2 .cashier-payments-list {
+    min-height: 480px;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-main > strong:first-child {
+    grid-column: 1 / -1;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-amount {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-top: 10px;
+    text-align: left;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-student {
+    grid-row: 3;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-receipt {
+    grid-row: 4;
+  }
+  .cashier-receipts-v2 .cashier-payment-record-meta {
+    grid-row: 5;
+  }
+  .cashier-receipts-v2 .cashier-payment-record button {
+    grid-row: 6;
+  }
+  .cashier-receipt-details .cashier-transaction-confirmed dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+}

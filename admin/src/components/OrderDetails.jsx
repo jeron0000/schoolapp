@@ -1,47 +1,107 @@
 import React from 'react'
+import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { assets } from '../assets/assets'
-import { actionLabels, getOrderStatusLabel, money, orderDate, orderName, statusColors } from '../utils/orderPresentation'
+import { actionLabels, getOrderStatusLabel, orderAddress, orderDate, statusColors } from '../utils/orderPresentation'
+import { refundPresentation } from '../../../shared/refund.js'
+import { formatOrderMoney, orderPhpTotals, tryPhpLineTotal } from '../../../shared/money.js'
 
-export const OrderStatusBadge = ({ status, label = status }) => <span className={'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium leading-4 ' + (statusColors[status] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')}><span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current'/>{label || 'Unknown'}</span>
+export const OrderStatusBadge = ({ status, label = status }) => (
+  <span
+    className={
+      'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium leading-4 ' +
+      (statusColors[status] || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')
+    }
+  >
+    <span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current' />
+    {label || 'Unknown'}
+  </span>
+)
 
-const OrderDetails = ({ order, currency, pending, onAction, onClose }) => {
-  if (!order) return <aside className='rounded-xl border border-slate-200 bg-white p-6 text-center text-sm dark:border-slate-800 dark:bg-slate-900/60'><h2 className='font-semibold text-slate-900 dark:text-slate-100'>Order Details</h2><p className='mt-3 text-slate-500 dark:text-slate-400'>Select View on an order to see its details.</p></aside>
+const OrderDetails = ({ order, pending, onAction, onClose, error }) => {
+  if (!order) return (
+    <aside className='order-details-empty'>
+      <h2>Order Details</h2>
+      <p>Select View on an order to see its details.</p>
+    </aside>
+  )
 
   const items = order.items || []
-  const address = order.address || {}
+  const address = orderAddress(order)
   const date = orderDate(order.date)
-  const hasSubtotal = items.length > 0 && items.every(item => Number.isFinite(Number(item.price)) && Number.isFinite(Number(item.quantity)))
-  const subtotal = hasSubtotal ? items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0) : null
+  const { subtotal, fee } = orderPhpTotals(order)
+  const money = value => formatOrderMoney(value, order)
   // Orders store historical item prices and the final amount, not a separate fee.
-  const fee = hasSubtotal && Number.isFinite(Number(order.amount)) ? Math.round((Number(order.amount) - subtotal) * 100) / 100 : null
   const actions = (order.allowedStatuses || []).filter(status => actionLabels[status])
+  const refund = order.refundSummary || refundPresentation(order)
 
   return (
-    <aside id='order-details' aria-label='Order Details' tabIndex={-1} className='min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm focus:outline-none sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'>
-      <div className='flex flex-wrap items-center justify-between gap-3'><h2 className='border-l-4 border-amber-400 pl-3 text-lg font-semibold text-slate-900 dark:text-slate-100'>Order Details</h2><button type='button' onClick={onClose} className='min-h-9 rounded px-2 text-xs hover:bg-slate-100 focus-visible:outline-amber-500 dark:hover:bg-slate-800' aria-label='Close order details'>Close</button></div>
-      <p className='mt-4 break-all text-sm font-semibold text-slate-900 dark:text-slate-100'>#{order._id}</p>
-      <p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{date.date}{date.time && `, ${date.time}`}</p>
-      <div className='mt-3 flex flex-wrap gap-2'><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)}/><OrderStatusBadge status={order.payment ? 'Paid' : 'Pending'}/></div>
-      <div className='my-5 space-y-2 break-words text-xs leading-5'>
-        <p className='text-sm font-semibold text-slate-900 dark:text-slate-100'>{orderName(order)}</p>
-        {address.email && <p>{address.email}</p>}
-        {address.phone && <p>{address.phone}</p>}
-        {address.street && <p>{address.street}</p>}
-        <p>{[address.city, address.state, address.country, address.zipcode].filter(Boolean).join(', ')}</p>
-        <p>Payment method: <span className='font-medium text-slate-900 dark:text-slate-200'>{order.paymentMethod}</span></p>
+    <aside id='order-details' aria-label='Order Details' tabIndex={-1} className='pamo-order-details'>
+      <header className='order-details-heading'>
+        <div>
+          <button type='button' className='order-details-back' aria-label='Back to orders' onClick={onClose}><ArrowLeft size={14} aria-hidden='true' />Orders</button>
+          <h2>Order Details</h2>
+          <p className='order-details-selected'>Selected order</p>
+        </div>
+        <button type='button' onClick={onClose} aria-label='Close order details'><span>Close</span><X size={16} aria-hidden='true' /></button>
+      </header>
+      <div className='order-details-content'>
+        <section className='order-details-reference' aria-label='Order reference and status'>
+          <p>#{order._id}</p>
+          <span>{date.date}{date.time && `, ${date.time}`}</span>
+          <div className='order-details-states'>
+            <div><h3>Payment</h3><span className='orders-badge'><OrderStatusBadge status={order.payment ? 'Paid' : 'Pending'} /></span></div>
+            <div><h3>Order progress</h3><span className='orders-badge'><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)} /></span></div>
+          </div>
+          {refund && <p className='order-details-refund'><strong>{refund.status}.</strong> {refund.message}</p>}
+          {error && <p role='alert' className='orders-error'>{error}</p>}
+        </section>
+        <section className='order-details-customer' aria-labelledby='order-customer-heading'>
+          <h3 id='order-customer-heading'>Customer information</h3>
+          <dl>
+            <div><dt>Student</dt><dd>{address.name}</dd></div>
+            <div><dt>Email</dt><dd>{address.email || 'Email not provided'}</dd></div>
+            <div><dt>Phone</dt><dd>{address.phone || 'Mobile number not provided'}</dd></div>
+            <div><dt>Address</dt><dd>{address.street || 'Street address not provided'}<br />{address.locality || 'City, province, country and zipcode not provided'}</dd></div>
+            <div><dt>Payment method</dt><dd>{order.paymentMethod}</dd></div>
+          </dl>
+        </section>
+        <section className='order-details-items' aria-labelledby='order-items-heading'>
+          <h3 id='order-items-heading'>Ordered items · {items.length}</h3>
+          <ul>
+            {items.map((item, index) => (
+              <li key={`${item._id}-${item.size}-${index}`}>
+                <img src={item.image?.[0] || assets.parcel_icon} alt={item.name || 'Order item'} />
+                <div>
+                  <p>{item.name}</p>
+                  <span>{item.size && `Size: ${item.size} · `}Qty: {item.quantity}</span>
+                  <span>{money(item.price)} each</span>
+                </div>
+                <strong>{money(tryPhpLineTotal(item.price, item.quantity))}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <dl className='order-details-totals'>
+          <div><dt>Subtotal</dt><dd>{subtotal === null ? 'Unavailable' : money(subtotal)}</dd></div>
+          <div><dt>Processing Fee</dt><dd>{fee === null || fee < 0 ? 'Unavailable' : money(fee)}</dd></div>
+          <div><dt>Total</dt><dd>{money(order.amount)}</dd></div>
+        </dl>
       </div>
-      <div className='border-t border-slate-200 pt-4 dark:border-slate-800'>
-        <h3 className='mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100'>Items</h3>
-        <ul className='max-h-80 space-y-2 overflow-y-auto'>
-          {items.map((item,index)=><li key={`${item._id}-${item.size}-${index}`} className='flex items-start gap-3 rounded-lg bg-slate-50 p-2 dark:bg-slate-800/50'><img src={item.image?.[0] || assets.parcel_icon} alt={item.name || 'Order item'} className='h-12 w-10 shrink-0 rounded bg-slate-100 object-contain dark:bg-slate-700'/><div className='min-w-0 flex-1'><p className='break-words text-xs font-medium text-slate-900 dark:text-slate-100'>{item.name}</p><p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{item.size && `Size: ${item.size} · `}Qty: {item.quantity}</p><p className='mt-1 text-xs'>{money(item.price,currency)} each</p></div><p className='shrink-0 text-xs font-semibold text-slate-900 dark:text-slate-100'>{money(item.price * item.quantity,currency)}</p></li>)}
-        </ul>
-      </div>
-      <dl className='mt-4 space-y-2 border-t border-slate-200 pt-4 text-xs dark:border-slate-800'>
-        <div className='flex justify-between gap-3'><dt>Subtotal</dt><dd className='font-medium text-slate-900 dark:text-slate-100'>{subtotal === null ? 'Unavailable' : money(subtotal,currency)}</dd></div>
-        <div className='flex justify-between gap-3'><dt>Processing Fee</dt><dd className='font-medium text-slate-900 dark:text-slate-100'>{fee === null || fee < 0 ? 'Unavailable' : money(fee,currency)}</dd></div>
-        <div className='flex justify-between gap-3 text-sm font-semibold text-slate-900 dark:text-slate-100'><dt>Total</dt><dd>{money(order.amount,currency)}</dd></div>
-      </dl>
-      {actions.length > 0 ? <div className='mt-5 flex flex-wrap gap-2'>{[...actions].sort((a,b)=>(a === 'Cancelled' ? -1 : b === 'Cancelled' ? 1 : 0)).map(status=><button key={status} type='button' disabled={pending} onClick={()=>onAction(order,status)} className={'min-h-10 flex-1 rounded-lg px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-wait disabled:opacity-50 ' + (status === 'Cancelled' ? 'border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10' : 'bg-amber-400 text-slate-950 hover:bg-amber-500')}>{pending ? 'Updating…' : actionLabels[status]}</button>)}</div> : <p className='mt-5 rounded-lg bg-slate-50 p-3 text-xs leading-5 dark:bg-slate-800/50'>{['Claimed','Cancelled'].includes(order.status) ? 'No further order actions are available.' : order.payment ? 'No action is available for this order status.' : 'Awaiting payment confirmation from the payment or cashier workflow.'}</p>}
+      <footer className='order-details-actions'>
+        {actions.length > 0 ? [...actions]
+          .sort((a, b) => (a === 'Cancelled' ? -1 : b === 'Cancelled' ? 1 : 0))
+          .map(status => (
+            <button key={status} type='button' disabled={pending} onClick={() => onAction(order, status)} className={status === 'Cancelled' ? 'orders-reject' : 'orders-primary'}>
+              {pending ? 'Updating…' : actionLabels[status]}{status !== 'Cancelled' && <ArrowRight size={16} aria-hidden='true' />}
+            </button>
+          )) : (
+            <p>{['Claimed', 'Cancelled'].includes(order.status)
+              ? 'No further order actions are available.'
+              : order.payment
+                ? 'No action is available for this order status.'
+                : 'Awaiting payment confirmation from the payment or cashier workflow.'}</p>
+          )}
+      </footer>
     </aside>
   )
 }

@@ -1,39 +1,45 @@
 import validator from "validator";
 import bcrypt from "bcrypt"
-import jwt from "jsonwebtoken"
+import { issueAuthToken } from '../utils/authTokens.js';
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
 import userModel from "../models/userModel.js";
 
-const createToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET)
-}
+const invalidCredentials = { success: false, message: 'Invalid email or password.' };
+const registrationFailure = { success: false, message: 'Unable to create your account with these details. Please sign in or contact PAMO.' };
+const dummyPasswordHash = bcrypt.hashSync('pamo-login-timing-placeholder', 10);
+const validCredentials = body => body && typeof body === 'object' && !Array.isArray(body)
+    && Object.hasOwn(body, 'email') && typeof body.email === 'string' && body.email.length > 0 && body.email.length <= 254
+    && Object.hasOwn(body, 'password') && typeof body.password === 'string' && body.password.length > 0;
+const authenticated = (res, token) => {
+    res.locals ||= {};
+    res.locals.authenticationSucceeded = true;
+    return res.json({ success: true, token });
+};
 
 // Route for user login
 const loginUser = async (req, res) => {
     try {
 
+        if (!validCredentials(req.body)) return res.json(invalidCredentials);
         const { email, password } = req.body;
 
         const user = await userModel.findOne({ email });
 
-        if (!user) {
-            return res.json({ success: false, message: "User doesn't exists" })
-        }
+        // Keep legacy long-password hashes usable; enforce the byte limit on registration.
+        const isMatch = await bcrypt.compare(password, user?.password || dummyPasswordHash);
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        if (user && isMatch) {
 
-        if (isMatch) {
-
-            const token = createToken(user._id)
-            res.json({ success: true, token })
+            const token = issueAuthToken(user._id, user.role || 'customer')
+            authenticated(res, token)
 
         }
         else {
-            res.json({ success: false, message: 'Invalid Credentials' })
+            res.json(invalidCredentials)
         }
 
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message })
+    } catch {
+        res.json({ success: false, message: 'Unable to sign in. Please try again.' })
     }
 }
 
@@ -41,13 +47,8 @@ const loginUser = async (req, res) => {
 const registerUser = async (req, res) => {
     try {
 
+        if (!validCredentials(req.body)) return res.json(registrationFailure);
         const { name, email, password } = req.body;
-
-        // Checking user already exists or not
-        const exists = await userModel.findOne({ email });
-        if (exists) {
-            return res.json({ success: false, message: "User already exists" })
-        }
 
         // Validating format and strong password
         if (!validator.isEmail(email)) {
@@ -56,6 +57,12 @@ const registerUser = async (req, res) => {
         if (password.length < 8) {
             return res.json({ success: false, message: "Please enter a strong password" })
         }
+        if (Buffer.byteLength(password, 'utf8') > 72) {
+            return res.json({ success: false, message: 'Password must be no more than 72 UTF-8 bytes. Use a shorter password.' });
+        }
+
+        const exists = await userModel.findOne({ email });
+        if (exists) return res.json(registrationFailure);
 
         // hashing user password
         const salt = await bcrypt.genSalt(10)
@@ -69,13 +76,12 @@ const registerUser = async (req, res) => {
 
         const user = await newUser.save()
 
-        const token = createToken(user._id)
+        const token = issueAuthToken(user._id, 'customer')
 
-        res.json({ success: true, token })
+        authenticated(res, token)
 
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message })
+    } catch {
+        res.json(registrationFailure)
     }
 }
 
@@ -83,24 +89,26 @@ const registerUser = async (req, res) => {
 const adminLogin = async (req, res) => {
     try {
 
+        if (!validCredentials(req.body)) return res.json(invalidCredentials);
         const { email, password } = req.body
 
-        if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-            const token = jwt.sign(email+password,process.env.JWT_SECRET);
-            res.json({ success: true, token })
+        const configuredAdmin = typeof process.env.ADMIN_EMAIL === 'string' && process.env.ADMIN_EMAIL.trim()
+            && typeof process.env.ADMIN_PASSWORD === 'string' && process.env.ADMIN_PASSWORD;
+        if (configuredAdmin && email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+            const token = issueAuthToken(ADMIN_SUBJECT, 'admin');
+            authenticated(res, token)
         } else {
-            const cashier = typeof email === 'string' && typeof password === 'string'
-                ? await userModel.findOne({ email, role: 'cashier' }) : null
-            if (cashier && await bcrypt.compare(password, cashier.password)) {
-                res.json({ success: true, token: createToken(cashier._id) })
+            const cashier = await userModel.findOne({ email, role: 'cashier' });
+            const isMatch = await bcrypt.compare(password, cashier?.password || dummyPasswordHash);
+            if (cashier && isMatch) {
+                authenticated(res, issueAuthToken(cashier._id, 'cashier'))
             } else {
-                res.json({ success: false, message: "Invalid Credentials" })
+                res.json(invalidCredentials)
             }
         }
 
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message })
+    } catch {
+        res.json({ success: false, message: 'Unable to sign in. Please try again.' })
     }
 }
 

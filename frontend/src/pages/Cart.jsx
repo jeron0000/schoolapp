@@ -1,138 +1,591 @@
-import React, { useContext, useEffect, useRef, useState } from 'react'
-import { ShopContext } from '../context/shopContext'
-import { assets } from '../assets/assets';
-import CartTotal from '../components/CartTotal';
-import { getSizeStock } from '../../../shared/inventory';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  Minus,
+  Plus,
+  ShoppingBag,
+} from "lucide-react";
+import { ShopContext } from "../context/shopContext";
+import CartTotal from "../components/CartTotal";
+import CartImage from "../components/ImageWithFallback";
+import { getSizeStock } from "../../../shared/inventory";
+import "../components/StorefrontFoundation.css";
+import "./Cart.css";
+import { formatPhp, tryPhpLineTotal } from '../../../shared/money.js';
+import { createProductLookup } from '../../../shared/productLookup.js';
 
 const itemKey = (item) => JSON.stringify([item._id, item.size]);
+const money = (currency, amount) =>
+  formatPhp(amount);
 
-const CartItem = ({ item, productData, currency, selected, onSelection, updateQuantity, disabled }) => (
-  <article className='grid min-w-0 grid-cols-[1.25rem_4rem_minmax(0,1fr)] gap-x-3 rounded-xl border border-slate-100 bg-white p-3 sm:grid-cols-[1.25rem_5.5rem_minmax(0,1fr)] sm:gap-x-4 sm:p-4 dark:border-slate-800 dark:bg-slate-900/60'>
-    <label className='flex min-h-11 cursor-pointer items-center justify-center self-center sm:row-span-2'><input type='checkbox' checked={selected} onChange={onSelection} disabled={disabled} aria-label={'Select ' + productData.name + ', size ' + item.size} className='h-4 w-4 rounded !accent-amber-400'/></label>
-    <img className='h-24 w-16 rounded-lg bg-slate-50 object-contain sm:row-span-2 sm:h-28 sm:w-[5.5rem] dark:bg-slate-800' src={productData.image[0]} alt={productData.name}/>
-    <div className='min-w-0'>
-      <h3 className='text-sm font-semibold leading-5'>{productData.name}</h3>
-      <p className='mt-2 break-words text-sm font-semibold'>{currency}{Number(productData.price).toFixed(2)}</p>
-      <p className='mt-2 inline-block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400'>Size: {item.size}</p>
-      <p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{getSizeStock(productData, item.size)} available{item.quantity > getSizeStock(productData, item.size) ? ' — reduce quantity or remove this item before checkout.' : ''}</p>
-    </div>
-    <div className='col-span-3 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 sm:col-span-1 sm:col-start-3'>
-      <div className='inline-flex items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/40'>
-        <button type='button' disabled={disabled || item.quantity <= 1} onClick={()=>updateQuantity(item._id,item.size,item.quantity - 1)} aria-label={'Decrease quantity for ' + productData.name + ', size ' + item.size} className='h-11 w-11 text-lg text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800'>−</button>
-        <input aria-label={'Quantity for ' + productData.name + ', size ' + item.size} onChange={(e)=>{const quantity=Number(e.target.value); if(Number.isInteger(quantity) && quantity >= 1) updateQuantity(item._id,item.size,quantity)}} disabled={disabled} className='h-11 w-9 bg-transparent text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-inset focus:ring-amber-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none' type='number' min={1} max={getSizeStock(productData, item.size)} step={1} value={item.quantity}/>
-        <button type='button' disabled={disabled || item.quantity >= getSizeStock(productData, item.size)} onClick={()=>updateQuantity(item._id,item.size,item.quantity + 1)} aria-label={'Increase quantity for ' + productData.name + ', size ' + item.size} className='h-11 w-11 text-lg text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800'>+</button>
+const CartItem = ({
+  item,
+  currency,
+  managing,
+  selected,
+  onSelection,
+  onQuantity,
+  onRemove,
+  disabled,
+}) => {
+  const product = item.product;
+  const stock = getSizeStock(product, item.size);
+  const validQuantity =
+    Number.isSafeInteger(item.quantity) && item.quantity >= 1;
+  const unavailable = !product || !validQuantity || item.quantity > stock;
+  const name = product?.name || "Product unavailable";
+  return (
+    <article className={"cart-item" + (managing ? " is-managing" : "")}>
+      {managing && (
+        <label className="cart-item-selection">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onSelection}
+            disabled={disabled}
+            aria-label={`Select ${name}, size ${item.size}, for removal`}
+          />
+        </label>
+      )}
+      <div className="cart-item-photo">
+        <CartImage
+          key={product?.image?.[0] || "missing"}
+          src={product?.image?.[0]}
+          name={name}
+        />
       </div>
-      <p className='break-all text-sm font-semibold'>{currency}{(productData.price * item.quantity).toFixed(2)}</p>
-      <button type='button' disabled={disabled} onClick={()=>updateQuantity(item._id,item.size,0)} className='ml-auto inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10' aria-label={'Remove ' + productData.name + ', size ' + item.size}><img src={assets.bin_icon} className='w-3.5 theme-icon' alt=''/>Remove</button>
-    </div>
-  </article>
-);
+      <div className="cart-item-copy">
+        <h3>
+          {product ? <Link to={`/product/${item._id}`}>{name}</Link> : name}
+        </h3>
+        <p className="cart-unit-price">
+          Unit price ·{" "}
+          {product ? money(currency, Number(product.price)) : "Unavailable"}
+        </p>
+        <div
+          className={"cart-item-stock" + (unavailable ? " is-unavailable" : "")}
+        >
+          <p>Size {item.size}</p>
+          <strong>
+            {product
+              ? `${stock} available in this size`
+              : "This product is no longer available."}
+          </strong>
+          {unavailable && product && (
+            <span>
+              {!validQuantity
+                ? "Enter a valid quantity."
+                : "Reduce the quantity or remove this item before checkout."}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="cart-item-purchase">
+        <div className="cart-item-quantity">
+          <p className="cart-label">Quantity</p>
+          <div className="cart-quantity-stepper">
+            <button
+              type="button"
+              disabled={disabled || !validQuantity || item.quantity <= 1}
+              onClick={() => onQuantity(item.quantity - 1)}
+              aria-label={`Decrease quantity for ${name}, size ${item.size}`}
+            >
+              <Minus size={16} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={stock}
+              step={1}
+              value={validQuantity ? item.quantity : ""}
+              disabled={disabled || stock === 0}
+              onChange={(event) => onQuantity(Number(event.target.value))}
+              aria-label={`Quantity for ${name}, size ${item.size}`}
+            />
+            <button
+              type="button"
+              disabled={disabled || !validQuantity || item.quantity >= stock}
+              onClick={() => onQuantity(item.quantity + 1)}
+              aria-label={`Increase quantity for ${name}, size ${item.size}`}
+            >
+              <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <div className="cart-item-total">
+          <p className="cart-label">Line total</p>
+          <strong>
+            {product
+              ? money(currency, tryPhpLineTotal(product.price, item.quantity))
+              : "Unavailable"}
+          </strong>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn-secondary cart-action cart-item-remove"
+        disabled={disabled}
+        onClick={onRemove}
+        aria-label={`Remove ${name}, size ${item.size}`}
+      >
+        Remove<span className="cart-remove-mobile"> item</span>
+      </button>
+    </article>
+  );
+};
+
+const ClearCartDialog = ({
+  count,
+  busy,
+  feedback,
+  onClose,
+  onConfirm,
+  fallbackFocusRef,
+}) => {
+  const dialogRef = useRef(null);
+  const cancelRef = useRef(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement;
+    const fallbackFocus = fallbackFocusRef.current;
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = "hidden";
+    cancelRef.current.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected && previousFocus.getClientRects().length)
+        previousFocus.focus();
+      else fallbackFocus?.focus();
+    };
+  }, [fallbackFocusRef]);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="cart-clear-dialog"
+      aria-labelledby="cart-clear-title"
+      aria-describedby="cart-clear-description"
+      aria-modal="true"
+      aria-busy={busy}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      <p className="cart-eyebrow">Clear cart</p>
+      <h2 id="cart-clear-title">Remove everything from your cart?</h2>
+      <p id="cart-clear-description">
+        This removes all {count}{" "}
+        {count === 1 ? "product variant" : "product variants"} from your cart.
+        You can add items again from the collection.
+      </p>
+      {feedback && (
+        <p className="cart-feedback" role="alert">
+          {feedback}
+        </p>
+      )}
+      <div className="cart-dialog-actions">
+        <button
+          ref={cancelRef}
+          type="button"
+          className="btn-secondary cart-action"
+          disabled={busy}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn-secondary cart-action cart-danger"
+          disabled={busy}
+          onClick={onConfirm}
+        >
+          {busy ? "Clearing…" : "Clear all items"}
+        </button>
+      </div>
+    </dialog>
+  );
+};
 
 const Cart = () => {
-
-  const { products, currency, cartItems, updateQuantity, navigate, getProductsData } = useContext(ShopContext);
-  useEffect(() => { getProductsData(); }, [getProductsData]);
-
-  const [cartData, setCartData] = useState([]);
-  const [unselectedItems, setUnselectedItems] = useState(new Set());
-  const [removing, setRemoving] = useState(false);
+  const {
+    products,
+    currency,
+    cartItems,
+    updateQuantity,
+    getProductsData,
+    productsLoading,
+    productError,
+    cartReady = true,
+    cartError,
+    reloadCart,
+  } = useContext(ShopContext);
+  const findProduct = useMemo(() => createProductLookup(products), [products]);
+  useEffect(() => {
+    getProductsData();
+  }, [getProductsData]);
+  const [managing, setManaging] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  const [operation, setOperation] = useState(null);
+  const [feedback, setFeedback] = useState("");
+  const [clearOpen, setClearOpen] = useState(false);
+  const pending = useRef(false);
   const latestUpdateQuantity = useRef(updateQuantity);
+  const headingRef = useRef(null);
+  useEffect(() => {
+    latestUpdateQuantity.current = updateQuantity;
+  }, [updateQuantity]);
 
-  useEffect(() => { latestUpdateQuantity.current = updateQuantity; }, [updateQuantity]);
+  // Cart quantities remain owned solely by ShopContext; selection is removal-only.
+  const cartData = Object.entries(cartItems).flatMap(([id, sizes]) =>
+    Object.entries(sizes || {})
+      .filter(([, quantity]) => quantity > 0)
+      .map(([size, quantity]) => ({
+        _id: id,
+        size,
+        quantity,
+        product: findProduct(id),
+      })),
+  );
+  const selectedItems = cartData.filter((item) =>
+    selectedKeys.has(itemKey(item)),
+  );
+  const allSelected =
+    cartData.length > 0 && selectedItems.length === cartData.length;
+  const unitCount = cartData.reduce((total, item) => total + item.quantity, 0);
+  const busy = Boolean(operation);
+  const invalidItems = cartData.some(
+    (item) =>
+      !item.product ||
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity < 1 ||
+      item.quantity > getSizeStock(item.product, item.size),
+  );
+  const loading = productsLoading && products.length === 0;
+  const closeClear = useCallback(() => setClearOpen(false), []);
 
-  const selectedItems = cartData.filter((item)=>!unselectedItems.has(itemKey(item)));
-  const allSelected = cartData.length > 0 && selectedItems.length === cartData.length;
-
-  const toggleSelection = (item) => {
-    setUnselectedItems((previous)=>{
+  const toggleSelection = (item) =>
+    setSelectedKeys((previous) => {
       const next = new Set(previous);
       const key = itemKey(item);
-      if(next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
+
+  const changeQuantity = async (item, quantity) => {
+    if (pending.current) return;
+    if (
+      !Number.isSafeInteger(quantity) ||
+      quantity < 1 ||
+      quantity > getSizeStock(item.product, item.size)
+    ) {
+      setFeedback(
+        "Enter a whole quantity of at least 1, within the available stock for this size.",
+      );
+      return;
+    }
+    pending.current = true;
+    setOperation("quantity");
+    setFeedback("");
+    try {
+      await latestUpdateQuantity.current(item._id, item.size, quantity);
+    } catch {
+      setFeedback("Could not update your cart. Please try again.");
+    } finally {
+      pending.current = false;
+      setOperation(null);
+    }
   };
 
   const removeItems = async (items) => {
-    if(removing || items.length === 0) return;
-    setRemoving(true);
+    if (pending.current || !items.length) return false;
+    pending.current = true;
+    setOperation("removal");
+    setFeedback("");
     try {
-      for(const item of items) {
-        await latestUpdateQuantity.current(item._id,item.size,0);
-        // Let ShopContext's optimistic state commit before removing the next item.
-        await new Promise((resolve)=>window.setTimeout(resolve,0));
+      for (const item of items) {
+        await latestUpdateQuantity.current(item._id, item.size, 0);
+        // Preserve the existing sequential removal pattern: let optimistic state commit.
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
       }
+      setSelectedKeys(new Set());
+      return true;
+    } catch {
+      setFeedback("Could not finish removing these items. Please try again.");
+      return false;
     } finally {
-      setRemoving(false);
+      pending.current = false;
+      setOperation(null);
     }
   };
 
-
-  useEffect(() => {
-
-    if (products.length > 0) {
-      const tempData = [];
-      for (const items in cartItems) {
-        for (const item in cartItems[items]) {
-          if (cartItems[items][item] > 0) {
-            tempData.push({
-              _id: items,
-              size: item,
-              quantity: cartItems[items][item]
-            })
-          }
-        }
-      }
-      setCartData(tempData);
-    }
-  }, [cartItems, products])
-
   return (
-    <section className='page-section'>
-      <div className='mb-7 flex flex-wrap items-start justify-between gap-4 sm:mb-8'>
-        <div><p className='eyebrow mb-3'>A step closer to campus-ready</p><h1 className='flex items-center gap-3 text-3xl tracking-tight'><span aria-hidden='true' className='h-7 w-1 shrink-0 rounded-full bg-amber-500'/><span className='font-normal'>YOUR <span className='font-bold text-amber-500 dark:text-amber-400'>CART</span></span></h1><p className='mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400'>Review your essentials and sizes before checkout.</p></div>
-        <nav aria-label='Breadcrumb' className='flex min-h-11 items-center gap-2 text-xs text-slate-500 sm:pt-5 dark:text-slate-400'><button type='button' onClick={()=>navigate('/')} className='min-h-11 rounded-md hover:text-slate-900 dark:hover:text-slate-100'>Home</button><span aria-hidden='true'>›</span><span aria-current='page' className='font-medium text-amber-600 dark:text-amber-400'>Cart</span></nav>
+    <section className="cart-page">
+      <div className="cart-container">
+        <header className="cart-header">
+          <p className="cart-eyebrow">Check your essentials</p>
+          <div className="cart-heading-row">
+            <h1 ref={headingRef} tabIndex={-1}>
+              Your <span>cart</span>
+            </h1>
+            <nav aria-label="Breadcrumb">
+              <ol>
+                <li>
+                  <Link to="/">Home</Link>
+                </li>
+                <li>
+                  <ChevronRight size={14} aria-hidden="true" />
+                  <span aria-current="page">Cart</span>
+                </li>
+              </ol>
+            </nav>
+          </div>
+          <p className="cart-introduction">
+            Review your sizes, quantities and order total before checkout.
+          </p>
+        </header>
+        {productError && (
+          <div className="cart-request-error" role="alert">
+            <p>
+              Product availability could not be refreshed. Please try again
+              before checkout.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary cart-action"
+              onClick={getProductsData}
+              disabled={busy}
+            >
+              Try again
+            </button>
+          </div>
+        )}
+        {cartError && (
+          <div className="cart-request-error" role="alert">
+            <p>{cartError}</p>
+            <button type="button" className="btn-secondary cart-action" onClick={reloadCart} disabled={busy}>
+              Reload cart
+            </button>
+          </div>
+        )}
+        {!clearOpen && feedback && (
+          <p className="cart-feedback" role="alert">
+            {feedback}
+          </p>
+        )}
+        {loading ? (
+          <div className="cart-empty" role="status">
+            Loading your cart products…
+          </div>
+        ) : !cartData.length ? (
+          <div className="cart-empty">
+            <span className="cart-empty-icon" aria-hidden="true">
+              <ShoppingBag size={32} strokeWidth={1.75} />
+            </span>
+            <h2>{cartError ? "Your cart needs attention" : !cartReady ? "Loading your saved cart" : "Your cart is empty"}</h2>
+            <p>Browse the collection and choose a size to get started.</p>
+            <Link
+              to="/collection"
+              className="btn-primary cart-action cart-brand-action"
+            >
+              Browse collection{" "}
+              <ArrowRight size={18} strokeWidth={1.75} aria-hidden="true" />
+            </Link>
+          </div>
+        ) : (
+          <div className="cart-layout">
+            <div className="cart-items-column">
+              <section
+                className="cart-items-panel"
+                aria-labelledby="cart-items-heading"
+              >
+                <div className="cart-items-heading">
+                  <div>
+                    <h2 id="cart-items-heading">In your cart</h2>
+                    <p>
+                      {cartData.length}{" "}
+                      {cartData.length === 1
+                        ? "product variant"
+                        : "product variants"}{" "}
+                      · {unitCount} total {unitCount === 1 ? "unit" : "units"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary cart-action"
+                    aria-pressed={managing}
+                    disabled={busy}
+                    onClick={() => {
+                      setManaging((value) => !value);
+                      setSelectedKeys(new Set());
+                    }}
+                  >
+                    {managing ? "Done" : "Manage items"}
+                  </button>
+                </div>
+                {managing && (
+                  <div
+                    className="cart-management"
+                    aria-label="Select items for removal"
+                  >
+                    <p>
+                      Selection is for removal only. Checkout includes every
+                      remaining cart item.
+                    </p>
+                    <div>
+                      <label className="cart-select-all">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(element) => {
+                            if (element)
+                              element.indeterminate =
+                                selectedItems.length > 0 && !allSelected;
+                          }}
+                          disabled={busy}
+                          onChange={() =>
+                            setSelectedKeys(
+                              allSelected
+                                ? new Set()
+                                : new Set(cartData.map(itemKey)),
+                            )
+                          }
+                        />
+                        Select all ({cartData.length})
+                      </label>
+                      <button
+                        type="button"
+                        className="btn-secondary cart-action cart-danger"
+                        disabled={busy || !selectedItems.length}
+                        onClick={() => removeItems(selectedItems)}
+                      >
+                        Remove selected ({selectedItems.length})
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="cart-item-list" aria-busy={busy}>
+                  {cartData.map((item) => (
+                    <CartItem
+                      key={itemKey(item)}
+                      item={item}
+                      currency={currency}
+                      managing={managing}
+                      selected={selectedKeys.has(itemKey(item))}
+                      onSelection={() => toggleSelection(item)}
+                      onQuantity={(quantity) => changeQuantity(item, quantity)}
+                      onRemove={() => removeItems([item])}
+                      disabled={busy}
+                    />
+                  ))}
+                </div>
+                {busy && (
+                  <p className="cart-progress" role="status">
+                    {operation === "quantity"
+                      ? "Updating quantity…"
+                      : "Removing items…"}
+                  </p>
+                )}
+                <div className="cart-items-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary cart-action"
+                    disabled={busy}
+                    onClick={() => {
+                      setFeedback("");
+                      setClearOpen(true);
+                    }}
+                  >
+                    Clear cart
+                  </button>
+                  <Link to="/collection" className="btn-secondary cart-action">
+                    <ArrowLeft
+                      size={16}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                    Continue shopping
+                  </Link>
+                </div>
+              </section>
+              <p className="cart-order-note">
+                Cart changes do not reserve stock. Availability is confirmed
+                when your order is created.
+              </p>
+            </div>
+            <aside className="cart-sidebar" aria-label="Order review">
+              <CartTotal
+                cartView
+                itemCount={cartData.length}
+                unitCount={unitCount}
+              >
+                <Link
+                  to="/place-order"
+                  className={
+                    "btn-primary cart-action cart-brand-action cart-checkout" +
+                    (busy || !cartReady || invalidItems || productError ? " is-disabled" : "")
+                  }
+                  aria-disabled={busy || !cartReady || invalidItems || Boolean(productError)}
+                  onClick={(event) => {
+                    if (busy || !cartReady || invalidItems || productError)
+                      event.preventDefault();
+                  }}
+                >
+                  Proceed to checkout{" "}
+                  <ArrowRight size={18} strokeWidth={1.75} aria-hidden="true" />
+                </Link>
+                {invalidItems ? (
+                  <p className="cart-checkout-note">
+                    Review unavailable items or quantities before checkout.
+                    Every remaining cart item must be available.
+                  </p>
+                ) : (
+                  <p className="cart-checkout-note">
+                    Checkout includes every item currently in your cart.
+                  </p>
+                )}
+              </CartTotal>
+              <section
+                className="cart-support"
+                aria-labelledby="cart-support-heading"
+              >
+                <p className="cart-eyebrow">Before you check out</p>
+                <h2 id="cart-support-heading">Need to double-check a size?</h2>
+                <p>
+                  Review product details and size availability in the
+                  collection.
+                </p>
+                <Link to="/collection">
+                  Browse collection <ArrowRight size={16} aria-hidden="true" />
+                </Link>
+                <Link to="/contact">
+                  Contact support <ArrowRight size={16} aria-hidden="true" />
+                </Link>
+              </section>
+            </aside>
+          </div>
+        )}
+        {clearOpen && (
+          <ClearCartDialog
+            count={cartData.length}
+            busy={busy}
+            feedback={feedback}
+            onClose={closeClear}
+            onConfirm={async () => {
+              if (await removeItems(cartData)) closeClear();
+            }}
+            fallbackFocusRef={headingRef}
+          />
+        )}
       </div>
-      {cartData.length === 0 ? <div className='panel flex flex-col items-center px-5 py-16 text-center'>
-        <div className='mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-500/10'><img src={assets.cart_icon} className='w-7 theme-icon' alt=''/></div>
-        <h3 className='text-xl font-semibold'>Your cart is waiting for you</h3><p className='mt-3 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400'>Find your school essentials and choose a size to get started.</p><button type='button' onClick={()=>navigate('/collection')} className='btn-primary mt-6'>Browse collection <span aria-hidden='true'>→</span></button>
-      </div> : <div className='grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]'>
-        <div className='panel min-w-0 p-3 sm:p-4'>
-          <div className='mb-2 flex flex-wrap items-center justify-between gap-x-4'>
-            <label className='flex min-h-11 cursor-pointer items-center gap-3 text-xs text-slate-600 dark:text-slate-400'><input type='checkbox' checked={allSelected} ref={(element)=>{if(element) element.indeterminate=selectedItems.length > 0 && !allSelected}} onChange={()=>setUnselectedItems(allSelected ? new Set(cartData.map(itemKey)) : new Set())} disabled={removing} className='h-4 w-4 rounded !accent-amber-400'/>Select all ({cartData.length} {cartData.length === 1 ? 'item' : 'items'})</label>
-            <button type='button' onClick={()=>removeItems(selectedItems)} disabled={removing || selectedItems.length === 0} className='inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10'><img src={assets.bin_icon} className='w-3.5 theme-icon' alt=''/>Remove selected</button>
-          </div>
-          <p className='mb-4 text-xs leading-5 text-slate-500 dark:text-slate-400'>Selection is for removal. Checkout includes all cart items.</p>
-          <div className='space-y-3' aria-busy={removing}>
-          {cartData.map((item)=>{
-            const productData = products.find((product)=>product._id === item._id);
-            return (
-              <CartItem key={itemKey(item)} item={item} productData={productData} currency={currency} selected={!unselectedItems.has(itemKey(item))} onSelection={()=>toggleSelection(item)} updateQuantity={updateQuantity} disabled={removing}/>
-            )
-          })}
-          </div>
-          <div className='mt-4 flex flex-wrap items-center justify-between gap-3'>
-            <button type='button' disabled={removing} onClick={()=>{if(window.confirm('Remove all items from your cart?')) removeItems(cartData)}} className='inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 px-4 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-400/30 dark:text-red-400 dark:hover:bg-red-500/10'><img src={assets.bin_icon} className='w-3.5 theme-icon' alt=''/>Clear cart</button>
-            <button type='button' onClick={()=>navigate('/collection')} className='btn-secondary min-h-11 rounded-lg px-4 text-xs'><span aria-hidden='true'>←</span> Continue shopping</button>
-          </div>
-        </div>
-        <aside className='min-w-0 space-y-4'>
-          <CartTotal cartView itemCount={cartData.length}/>
-          <div className='panel p-4 sm:p-5'>
-            <button type='button' disabled={removing} onClick={()=>navigate('/place-order')} className='inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50'>Proceed to checkout <span aria-hidden='true'>→</span></button>
-            <p className='mt-3 text-center text-xs leading-5 text-slate-500 dark:text-slate-400'>Review your information and payment method next.</p>
-          </div>
-          <ul className='panel space-y-5 p-5'>
-            {[
-              [assets.cart_icon, 'Organized checkout', 'A clear checkout process, all in one place.'],
-              [assets.exchange_icon, 'Order & claim', 'Order your essentials and get ready for campus.'],
-              [assets.quality_icon, 'School Essentials', 'Browse available uniforms and school essentials.'],
-              [assets.support_img, 'Need Help?', 'Contact support for assistance.']
-            ].map(([icon,title,copy])=><li key={title} className='flex items-start gap-3'><span className='flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-400/10'><img src={icon} className='w-5 theme-icon' alt=''/></span><div className='min-w-0'>{title === 'Need Help?' ? <button type='button' onClick={()=>navigate('/contact')} className='min-h-6 rounded text-left text-sm font-semibold text-slate-900 hover:underline dark:text-slate-100'>{title}</button> : <p className='text-sm font-semibold text-slate-900 dark:text-slate-100'>{title}</p>}<p className='mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400'>{copy}</p></div></li>)}
-          </ul>
-        </aside>
-      </div>}
     </section>
-  )
-}
+  );
+};
 
-export default Cart
+export default Cart;

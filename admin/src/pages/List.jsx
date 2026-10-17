@@ -6,25 +6,17 @@ import axios from 'axios'
 import { toast } from 'react-toastify'
 import StockManagementDrawer from '../components/StockManagementDrawer'
 import { getTotalStock, getStockLabel } from '../../../shared/inventory'
+import { ChevronLeft, ChevronRight, Image, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react'
+import './List.css'
 
 const pageSize = 9
-const controlClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-const iconPaths = {
-  search: 'm21 21-4.5-4.5M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
-  plus: 'M12 5v14M5 12h14',
-  reset: 'M3 10a9 9 0 1 1 2 8M3 4v6h6',
-  trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',
-  close: 'm6 6 12 12M6 18 18 6',
-  previous: 'm14 6-6 6 6 6',
-  next: 'm10 6 6 6-6 6',
-  image: 'M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M16 7h.01'
-}
+const controlClass = 'product-list-control'
+const icons = { search: Search, plus: Plus, reset: RotateCcw, trash: Trash2, close: X, previous: ChevronLeft, next: ChevronRight, image: Image }
 
-const Icon = ({ name, className = 'h-5 w-5' }) => (
-  <svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className={className}>
-    <path d={iconPaths[name]} />
-  </svg>
-)
+const Icon = ({ name, className = 'h-5 w-5' }) => {
+  const Component = icons[name]
+  return <Component aria-hidden='true' strokeWidth={1.7} className={className} />
+}
 
 const List = ({ token }) => {
   const [list, setList] = useState([])
@@ -39,24 +31,30 @@ const List = ({ token }) => {
   const deleteDialog = useRef(null)
   const cancelDeleteButton = useRef(null)
   const deletionPending = useRef(false)
+  const productRequestId = useRef(0)
+  const productsActive = useRef(false)
   const [stockProductId, setStockProductId] = useState(null)
   const closeStock = useCallback(() => setStockProductId(null), [])
   const stockProduct = list.find(product => product._id === stockProductId)
 
-  const fetchList = async () => {
+  const fetchList = useCallback(async () => {
+    if (!productsActive.current) return
+    const requestId = ++productRequestId.current
     setLoading(true)
     setError('')
     try {
       const response = await axios.get(backendUrl + '/api/product/list')
+      if (!productsActive.current || requestId !== productRequestId.current) return
       if (!response.data.success) throw new Error(response.data.message || 'Unable to load products.')
       setList(response.data.products)
     } catch (error) {
+      if (!productsActive.current || requestId !== productRequestId.current) return
       setError(error.message)
       toast.error(error.message)
     } finally {
-      setLoading(false)
+      if (productsActive.current && requestId === productRequestId.current) setLoading(false)
     }
-  }
+  }, [])
 
   const removeProduct = async product => {
     if (!product || deletionPending.current) return
@@ -80,8 +78,13 @@ const List = ({ token }) => {
   }
 
   useEffect(() => {
+    productsActive.current = true
     fetchList()
-  }, [])
+    return () => {
+      productsActive.current = false
+      productRequestId.current += 1
+    }
+  }, [fetchList, token])
 
   useEffect(() => {
     const dialog = deleteDialog.current
@@ -113,96 +116,119 @@ const List = ({ token }) => {
   }
 
   return (
-    <section aria-labelledby='product-list-heading' className='min-w-0 space-y-6 text-slate-600 dark:text-slate-400'>
-      <header className='flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center'>
-        <div className='min-w-0 border-l-4 border-amber-400 pl-4'>
-          <h1 id='product-list-heading' className='text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-slate-100'>Product List</h1>
-          <p className='mt-1 text-sm leading-6'>Manage, update, and organize all products in the PAMO school merchandise store.</p>
+    <section aria-labelledby='product-list-heading' className='pamo-product-list'>
+      <nav aria-label='Breadcrumb' className='product-list-breadcrumb'>
+        <Link to='/dashboard'>Admin</Link><span aria-hidden='true'>/</span><span>Products</span><span aria-hidden='true'>/</span><span aria-current='page'>All Items</span>
+      </nav>
+      <header className='product-list-heading'>
+        <div>
+          <h1 id='product-list-heading'>Product List</h1>
+          <p>Manage and organize merchandise, pricing and available stock.</p>
         </div>
-        <Link to='/add' className='inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 text-sm font-semibold text-slate-950 hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500'>
-          <Icon name='plus' /> Add New Item
-        </Link>
+        <Link to='/add' className='product-list-primary'><Icon name='plus' /> Add New Item</Link>
       </header>
 
-      <div role='search' aria-label='Search and filter products' className='grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(12rem,1fr)_10rem_10rem_auto]'>
-        <label className='relative min-w-0 sm:col-span-3 xl:col-span-1'>
+      <div role='search' aria-label='Search and filter products' className='product-list-filters'>
+        <label className='product-list-search'>
           <span className='sr-only'>Search products</span>
-          <Icon name='search' className='pointer-events-none absolute left-3 top-3 h-5 w-5 text-slate-500 dark:text-slate-400' />
-          <input type='search' value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder='Search products by name, category, or ID…' className={controlClass + ' w-full pl-10 placeholder:text-slate-500 dark:placeholder:text-slate-400'} />
+          <Icon name='search' />
+          <input type='search' value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder='Search products by name, category, or ID…' className={controlClass} />
         </label>
-        <select aria-label='Filter by category' value={category} onChange={event => { setCategory(event.target.value); setPage(1) }} className={controlClass + ' min-w-0 w-full'}>
+        <select aria-label='Filter by category' value={category} onChange={event => { setCategory(event.target.value); setPage(1) }} className={controlClass}>
           <option value=''>All Categories</option>
           {categories.map(value => <option key={value} value={value}>{value}</option>)}
         </select>
-        <select aria-label='Filter by tag' value={tag} onChange={event => { setTag(event.target.value); setPage(1) }} className={controlClass + ' min-w-0 w-full'}>
+        <select aria-label='Filter by tag' value={tag} onChange={event => { setTag(event.target.value); setPage(1) }} className={controlClass}>
           <option value=''>All Tags</option>
           <option value='NewArrival'>New Arrival</option>
           <option value='BestSeller'>Best Seller</option>
         </select>
-        <button type='button' onClick={resetFilters} className={controlClass + ' inline-flex items-center justify-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800'}>
+        <button type='button' onClick={resetFilters} className={controlClass + ' product-list-reset'}>
           <Icon name='reset' className='h-4 w-4' /> Reset
         </button>
       </div>
 
-      <div className='overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/40'>
-        {loading ? <p role='status' className='px-5 py-12 text-center text-sm'>Loading products…</p>
-          : error ? <div role='alert' className='space-y-3 px-5 py-12 text-center text-sm'><p>{error}</p><button type='button' onClick={fetchList} className={controlClass}>Try again</button></div>
-          : visibleProducts.length === 0 ? <div className='px-5 py-12 text-center'><h2 className='font-semibold text-slate-950 dark:text-slate-100'>{list.length ? 'No matching products' : 'No products yet'}</h2><p className='mt-2 text-sm'>{list.length ? 'Try another search or reset your filters.' : 'Add your first item to start your product list.'}</p></div>
-          : <div className='overflow-x-auto'>
-            <table className='block w-full text-left text-sm sm:table'>
-              <caption className='sr-only'>PAMO products with categories, prices, merchandising tags, and delete actions</caption>
-              <thead className='hidden border-b border-slate-200 bg-slate-50 text-slate-700 sm:table-header-group dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200'>
-                <tr><th scope='col' className='px-4 py-3 font-medium'>Product</th><th scope='col' className='px-4 py-3 font-medium'>Category</th><th scope='col' className='px-4 py-3 font-medium'>Price</th><th scope='col' className='px-4 py-3 font-medium'>Stock</th><th scope='col' className='px-4 py-3 font-medium'>Tags</th><th scope='col' className='px-4 py-3 text-right font-medium'>Action</th></tr>
-              </thead>
-              <tbody className='block sm:table-row-group'>
-                {visibleProducts.map(product => (
-                  <tr key={product._id} className='grid grid-cols-2 gap-x-3 gap-y-3 border-b border-slate-200 p-4 last:border-b-0 hover:bg-slate-50 sm:table-row sm:p-0 dark:border-slate-800 dark:hover:bg-slate-800/40'>
-                    <td className='col-span-2 min-w-0 sm:px-4 sm:py-2'>
-                      <div className='flex min-w-0 items-center gap-3'>
-                        <div className='flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'>
-                          {product.image?.[0] ? <img src={product.image[0]} alt='' loading='lazy' className='h-full w-full object-contain' onError={event => { event.currentTarget.hidden = true }} /> : <Icon name='image' />}
+      {!loading && !error && <div className='product-list-summary'>
+        <p>{visibleProducts.length} products on this page · {filtered.length} total</p>
+        <span>Inventory overview</span>
+      </div>}
+      <div className='product-list-panel' aria-busy={loading}>
+        {loading ? <p role='status' className='product-list-empty'>Loading products…</p>
+          : error ? <div role='alert' className='product-list-empty'><p>{error}</p><button type='button' onClick={fetchList} className={controlClass}>Try again</button></div>
+          : visibleProducts.length === 0 ? <div className='product-list-empty'>
+            <h2>{list.length ? 'No matching products' : 'No products yet'}</h2>
+            <p>{list.length ? 'Try another search or reset your filters.' : 'Add your first item to start your product list.'}</p>
+            {list.length > 0 && <button type='button' onClick={resetFilters} className={controlClass}>Clear filters</button>}
+          </div>
+          : <table className='product-list-table'>
+            <caption className='sr-only'>PAMO products with categories, prices, stock, merchandising tags, and actions</caption>
+            <thead>
+              <tr>
+                <th scope='col'>Product</th>
+                <th scope='col' className='product-list-category'>Category</th>
+                <th scope='col'>Price</th>
+                <th scope='col'>Stock</th>
+                <th scope='col' className='product-list-tags'>Tags</th>
+                <th scope='col'>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleProducts.map(product => {
+                const total = getTotalStock(product)
+                const stockState = total === 0 ? 'empty' : total <= 5 ? 'low' : 'available'
+                const tags = [[product.NewArrival === true, 'NEW'], [product.BestSeller === true, 'BEST SELLER']]
+                  .filter(([enabled]) => enabled)
+                return (
+                  <tr key={product._id}>
+                    <td className='product-list-product'>
+                      <div className='product-list-identity'>
+                        <div className='product-list-image'>
+                          {product.image?.[0] ? <img src={product.image[0]} alt='' loading='lazy' onError={event => { event.currentTarget.hidden = true }} /> : <Icon name='image' />}
                         </div>
-                        <span className='min-w-0 break-words font-medium text-slate-950 dark:text-slate-100'>{product.name}</span>
+                        <div className='product-list-name'>
+                          <span>{product.name}</span>
+                          <span className='product-list-compact-category'>{product.category || '—'}{product.subCategory ? ' · ' + product.subCategory : ''}</span>
+                          <div className='product-list-compact-tags'>
+                            {tags.map(([, label]) => <span key={label} className='product-list-tag'>{label}</span>)}
+                          </div>
+                        </div>
                       </div>
                     </td>
-                    <td className='min-w-0 sm:px-4 sm:py-2'>
-                      <span className='mb-1 block text-xs sm:hidden'>Category</span>
-                      {product.category ? <span className='inline-block rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300'>{product.category}</span> : <span>—</span>}
-                      {product.subCategory && <span className='mt-1 block text-xs'>{product.subCategory}</span>}
+                    <td className='product-list-category'>
+                      <span className='product-list-category-label'>{product.category || '—'}</span>
+                      {product.subCategory && <span className='product-list-subcategory'>{product.subCategory}</span>}
                     </td>
-                    <td className='sm:px-4 sm:py-2'>
-                      <span className='mb-1 block text-xs font-normal text-slate-500 sm:hidden dark:text-slate-400'>Price</span>
-                      <span className='whitespace-nowrap font-semibold text-slate-950 dark:text-slate-100'>{money(product.price, currency)}</span>
+                    <td className='product-list-price'><span className='product-list-mobile-label'>Price: </span>{money(product.price, currency)}</td>
+                    <td className={'product-list-stock is-' + stockState}>
+                      <strong>{total}</strong><span>{getStockLabel(total)}</span>
                     </td>
-                    <td className='self-center sm:px-4 sm:py-2'>
-                      <span className='block font-semibold'>{getTotalStock(product)}</span>
-                      <span className={'whitespace-nowrap text-xs ' + (getTotalStock(product) === 0 ? 'text-red-600 dark:text-red-400' : getTotalStock(product) <= 5 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400')}>{getStockLabel(getTotalStock(product))}</span>
+                    <td className='product-list-tags'>
+                      <div>{tags.map(([, label]) => <span key={label} className='product-list-tag'>{label}</span>)}</div>
                     </td>
-                    <td className='self-center sm:px-4 sm:py-2'>
-                      <div className='flex flex-wrap gap-1.5'>
-                        {[[product.NewArrival === true, 'NEW'], [product.BestSeller === true, 'BEST SELLER']].filter(([enabled]) => enabled).map(([, label]) => <span key={label} className='whitespace-nowrap rounded-full border border-amber-500 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-400 dark:text-amber-300'>{label}</span>)}
+                    <td className='product-list-actions'>
+                      <div>
+                        <button type='button' aria-label={`Manage stock for ${product.name}`} onClick={() => setStockProductId(product._id)} className={controlClass + ' product-list-manage'}><span>Manage </span>Stock</button>
+                        <button type='button' aria-label={`Delete ${product.name}`} title='Delete product' disabled={deletingId !== null} onClick={() => setProductToDelete(product)} className='product-list-delete'>
+                          <Icon name='trash' className='h-4 w-4' />
+                        </button>
                       </div>
-                    </td>
-                    <td className='text-right sm:px-4 sm:py-2'>
-                      <button type='button' onClick={() => setStockProductId(product._id)} className={controlClass + ' mb-1 mr-2 text-xs'}>Manage Stock</button>
-                      <button type='button' aria-label={`Delete ${product.name}`} title='Delete product' disabled={deletingId !== null} onClick={() => setProductToDelete(product)} className='inline-flex h-11 w-11 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-wait disabled:opacity-50 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-400 dark:hover:bg-red-400/20'>
-                        <Icon name='trash' className='h-4 w-4' />
-                      </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>}
-        {!loading && !error && <div className='flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs dark:border-slate-800'>
+                )
+              })}
+            </tbody>
+          </table>}
+        {!loading && !error && <div className='product-list-pagination'>
           <p role='status'>Showing {filtered.length ? start + 1 : 0} to {Math.min(start + pageSize, filtered.length)} of {filtered.length} products</p>
-          {pageCount > 1 && <nav aria-label='Product list pagination' className='flex items-center gap-2'>
-            <button type='button' aria-label='Previous page' disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className={controlClass + ' inline-flex w-11 items-center justify-center px-0 disabled:opacity-40'}><Icon name='previous' className='h-4 w-4' /></button>
-            <span aria-current='page' className='rounded-lg bg-amber-400 px-3 py-3 font-semibold text-slate-950'>{currentPage} <span className='font-normal'>/ {pageCount}</span></span>
-            <button type='button' aria-label='Next page' disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className={controlClass + ' inline-flex w-11 items-center justify-center px-0 disabled:opacity-40'}><Icon name='next' className='h-4 w-4' /></button>
-          </nav>}
+          <nav aria-label='Product list pagination'>
+            <span className='product-list-page-size'>9 per page</span>
+            <button type='button' aria-label='Previous page' disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className={controlClass}><Icon name='previous' className='h-4 w-4' /></button>
+            <span aria-current='page' className='product-list-current-page'>{currentPage} <span>/ {pageCount}</span></span>
+            <button type='button' aria-label='Next page' disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className={controlClass}><Icon name='next' className='h-4 w-4' /></button>
+          </nav>
         </div>}
       </div>
+      <p className='product-list-note'>Select Manage Stock to review each size before making an adjustment.</p>
       <dialog ref={deleteDialog} aria-labelledby='delete-item-heading' aria-describedby='delete-item-description delete-item-warning' aria-busy={deletingId !== null} onCancel={event => { event.preventDefault(); if (!deletionPending.current) setProductToDelete(null) }} className='!m-auto w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-lg backdrop:bg-slate-950/50 sm:p-6 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'>
         <div className='flex items-center justify-between gap-3'>
           <h2 id='delete-item-heading' className='text-lg font-semibold'>Delete Item</h2>
@@ -215,7 +241,7 @@ const List = ({ token }) => {
           <button type='button' disabled={deletingId !== null} onClick={() => removeProduct(productToDelete)} className='min-h-11 flex-1 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:cursor-wait disabled:opacity-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10'>{deletingId !== null ? 'Deleting...' : 'Delete Item'}</button>
         </div>
       </dialog>
-      {stockProduct && <StockManagementDrawer product={stockProduct} token={token} onClose={closeStock} onUpdated={updated => setList(previous => previous.map(product => product._id === updated._id ? updated : product))}/>}
+      {stockProduct && <StockManagementDrawer key={stockProduct._id} product={stockProduct} token={token} onClose={closeStock} onRefresh={fetchList} refreshing={loading} onUpdated={updated => setList(previous => previous.map(product => product._id === updated._id ? updated : product))}/>}
     </section>
   )
 }

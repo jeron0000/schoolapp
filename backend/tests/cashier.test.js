@@ -1,3 +1,5 @@
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
+import { issueAuthToken } from '../utils/authTokens.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
@@ -8,6 +10,7 @@ import cashierAuth from '../middleware/cashierAuth.js';
 import adminAuth from '../middleware/adminAuth.js';
 import { cashierOrders, confirmCashierPayment } from '../controllers/cashierController.js';
 import { adminLogin, registerUser } from '../controllers/userController.js';
+import { mockReceiptConnection } from './helpers/receiptConnection.js';
 
 process.env.STRIPE_SECRET_KEY = 'sk_test_cashier';
 process.env.JWT_SECRET = 'cashier-test-secret';
@@ -16,13 +19,13 @@ process.env.ADMIN_PASSWORD = 'test-password';
 const { default: router } = await import('../routes/orderRoute.js');
 const id = '0123456789abcdef01234567';
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
-const unpaid = overrides => ({ _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: 235, ...overrides });
+const unpaid = overrides => ({ _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', paymentCurrency: 'PHP', amount: 235, ...overrides });
 const request = overrides => ({ body: { orderId: id, paymentMethod: 'COD', receiptNumber: ' OR-101 ', ...overrides }, staff: { identity: 'cashier@school.test' } });
 
 test('cashier list includes only sent unpaid orders or canonical paid transactions', async t => {
     t.mock.method(orderModel, 'find', async query => {
         assert.deepEqual(query, { $or: [{ status: 'Sent to Cashier', payment: false }, { payment: true }] });
-        return [unpaid()];
+        return [{ ...unpaid(), toObject: () => unpaid() }];
     });
     const res = response();
     await cashierOrders({}, res);
@@ -30,6 +33,7 @@ test('cashier list includes only sent unpaid orders or canonical paid transactio
 });
 
 test('confirmation stores receipt, timestamp, identity and returns to preparation using the stored amount', async t => {
+    mockReceiptConnection(t, orderModel);
     t.mock.method(orderModel, 'findById', async () => unpaid());
     t.mock.method(orderModel.collection, 'createIndex', async (keys, options) => {
         assert.deepEqual(keys, { receiptNumber: 1 });
@@ -37,7 +41,7 @@ test('confirmation stores receipt, timestamp, identity and returns to preparatio
         assert.deepEqual(options.partialFilterExpression, { receiptNumber: { $type: 'string' } });
     });
     t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update, options) => {
-        assert.deepEqual(filter, { _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: 235 });
+        assert.deepEqual(filter, { _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: 235, paymentCurrency: 'PHP' });
         assert.deepEqual(options, { new: true, runValidators: true });
         assert.deepEqual(Object.keys(update.$set).sort(), ['confirmedBy', 'paidAt', 'payment', 'paymentMethod', 'receiptNumber', 'status']);
         assert.equal(update.$set.payment, true);
@@ -88,6 +92,7 @@ test('missing order returns 404', async t => {
 });
 
 test('atomic state check permits only one of two concurrent confirmations', async t => {
+    mockReceiptConnection(t, orderModel);
     t.mock.method(orderModel, 'findById', async () => unpaid());
     t.mock.method(orderModel.collection, 'createIndex', async () => {});
     let paid = false;
@@ -103,6 +108,7 @@ test('atomic state check permits only one of two concurrent confirmations', asyn
 });
 
 test('duplicate receipts and unavailable unique index fail closed', async t => {
+    const { connection } = mockReceiptConnection(t, orderModel);
     t.mock.method(orderModel, 'findById', async () => unpaid());
     t.mock.method(orderModel.collection, 'createIndex', async () => {});
     t.mock.method(orderModel, 'findOneAndUpdate', async () => { throw { code: 11000 }; });
@@ -110,6 +116,8 @@ test('duplicate receipts and unavailable unique index fail closed', async t => {
     await confirmCashierPayment(request(), duplicate);
     assert.equal(duplicate.code, 409);
     assert.match(duplicate.body.message, /Receipt Number is already recorded/);
+    connection.emit('disconnected');
+    connection.emit('connected');
     t.mock.method(orderModel.collection, 'createIndex', async () => { throw new Error('Unavailable'); });
     t.mock.method(orderModel, 'findOneAndUpdate', async () => assert.fail('Must not pay without uniqueness protection'));
     const unavailable = response();
@@ -125,7 +133,7 @@ test('cashier routes require backend permissions, with admin status route unchan
 });
 
 test('cashier authorization checks actual role, accepts admin, and rejects missing or revoked access', async t => {
-    const token = jwt.sign({ id }, process.env.JWT_SECRET);
+    const token = issueAuthToken(id, 'cashier');
     t.mock.method(userModel, 'findOne', async query => {
         assert.deepEqual(query, { _id: id, role: 'cashier' });
         return { email: 'cashier@school.test' };
@@ -135,7 +143,7 @@ test('cashier authorization checks actual role, accepts admin, and rejects missi
     await cashierAuth(req, response(), () => calls++);
     assert.deepEqual(req.staff, { role: 'cashier', identity: 'cashier@school.test' });
     await adminAuth(req, response(), () => assert.fail('Cashiers must not have admin permissions'));
-    const admin = { headers: { token: jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET) } };
+    const admin = { headers: { token: issueAuthToken(ADMIN_SUBJECT, 'admin') } };
     await cashierAuth(admin, response(), () => calls++);
     assert.equal(admin.staff.role, 'admin');
     assert.equal(calls, 2);
@@ -150,7 +158,7 @@ test('cashier authorization checks actual role, accepts admin, and rejects missi
 test('existing admin login remains valid and cashier login verifies its stored password and role', async t => {
     const admin = response();
     await adminLogin({ body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }, admin);
-    assert.equal(jwt.verify(admin.body.token, process.env.JWT_SECRET), process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD);
+    assert.equal(jwt.verify(admin.body.token, process.env.JWT_SECRET).sub, ADMIN_SUBJECT);
     const hash = await bcrypt.hash('cashier-password', 4);
     t.mock.method(userModel, 'findOne', async query => {
         assert.equal(query.role, 'cashier');
@@ -158,7 +166,7 @@ test('existing admin login remains valid and cashier login verifies its stored p
     });
     const cashier = response();
     await adminLogin({ body: { email: 'cashier@school.test', password: 'cashier-password' } }, cashier);
-    assert.equal(jwt.verify(cashier.body.token, process.env.JWT_SECRET).id, id);
+    assert.equal(jwt.verify(cashier.body.token, process.env.JWT_SECRET).sub, id);
     const wrong = response();
     await adminLogin({ body: { email: 'cashier@school.test', password: 'wrong' } }, wrong);
     assert.equal(wrong.body.success, false);

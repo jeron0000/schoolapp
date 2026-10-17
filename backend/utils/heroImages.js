@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { v2 as cloudinary } from 'cloudinary';
+import { detectImageMimeType } from './imageSignature.js';
 import { HERO_ALT_TEXT_LIMIT, HERO_PUBLIC_ID_PATTERN, validHeroAltText, secureHeroUrl } from '../models/heroSlideModel.js';
 
 export const HERO_MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -49,10 +50,7 @@ export const parseHeroOrder = body => {
 export const validateHeroFile = file => {
     if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) throw new HeroImageError('A hero image file is required.');
     if (file.buffer.length > HERO_MAX_FILE_BYTES) throw new HeroImageError('Hero images must be 5 MiB or smaller.', 413);
-    const buffer = file.buffer;
-    const type = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? 'image/png'
-        : buffer.length >= 3 && buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 ? 'image/jpeg'
-        : buffer.length >= 16 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' && ['VP8 ', 'VP8L', 'VP8X'].includes(buffer.toString('ascii', 12, 16)) ? 'image/webp' : null;
+    const type = detectImageMimeType(file.buffer);
     if (!type || type !== file.mimetype) throw new HeroImageError('Upload a valid JPEG, PNG or WEBP image matching its declared type.');
 };
 

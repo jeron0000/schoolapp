@@ -1,3 +1,5 @@
+import { formatPhp } from '../../../shared/money.js'
+
 export const orderFilters = [
   ['All Orders', () => true],
   ['New', order => order.status === 'Order Placed'],
@@ -30,12 +32,39 @@ export const actionLabels = {
   Claimed: 'Mark Claimed'
 }
 
-export const getOrderStatusLabel = order => order.status === 'Cancelled'
-  ? order.cancellationSource === 'customer' ? 'Cancelled by Customer' : order.cancellationSource === 'admin' ? 'Rejected by Admin' : 'Cancelled'
-  : order.status
+export const getOrderStatusLabel = order => {
+  if (order.status !== 'Cancelled') return order.status
+  if (order.cancellationSource === 'customer') return 'Cancelled by Customer'
+  if (order.cancellationSource === 'admin') return 'Rejected by Admin'
+  return 'Cancelled'
+}
 
-export const orderName = order => [order.address?.firstName, order.address?.lastName].filter(Boolean).join(' ') || 'Name not provided'
-export const money = (value, currency) => Number.isFinite(Number(value)) ? `${currency}${Number(value).toFixed(2)}` : 'Unavailable'
+const textValue = (value, limit) => typeof value === 'string' && value.trim()
+  ? value.trim().slice(0, limit)
+  : ''
+
+export const orderAddress = order => {
+  const source = order?.address && typeof order.address === 'object' && !Array.isArray(order.address)
+    ? order.address
+    : {}
+  const firstName = textValue(source.firstName, 100)
+  const lastName = textValue(source.lastName, 100)
+  return {
+    name: [firstName, lastName].filter(Boolean).join(' ') || 'Name not provided',
+    email: textValue(source.email, 254),
+    phone: textValue(source.phone, 30),
+    street: textValue(source.street, 200),
+    locality: [
+      textValue(source.city, 100),
+      textValue(source.state, 100),
+      textValue(source.country, 100),
+      textValue(source.zipcode, 20)
+    ].filter(Boolean).join(', ')
+  }
+}
+
+export const orderName = order => orderAddress(order).name
+export const money = formatPhp
 export const orderDate = value => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? { date: 'Date unavailable', time: '' } : {

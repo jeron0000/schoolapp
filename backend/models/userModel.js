@@ -6,9 +6,11 @@ const userSchema = new mongoose.Schema({
     password: { type: String, required: true },
     // Assigned by trusted administration only; registration never accepts roles.
     role: { type: String, enum: ['customer', 'cashier'], default: 'customer' },
-    cartData: { type: Object, default: {} }
+    cartData: { type: Object, default: {} },
+    // Optional per-entry revisions; removal keeps a tombstone, without migrating old carts.
+    cartVersions: { type: Object }
 }, { minimize: false })
 
-const userModel = mongoose.model.user || mongoose.model('user',userSchema);
+const userModel = mongoose.models.user || mongoose.model('user',userSchema);
 
 export default userModel

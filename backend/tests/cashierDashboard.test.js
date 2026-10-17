@@ -1,9 +1,11 @@
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
+import { issueAuthToken } from '../utils/authTokens.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
+import { connectTestDatabase } from './helpers/database.js';
 import orderModel from '../models/orderModel.js';
 import productModel from '../models/productModel.js';
 import userModel from '../models/userModel.js';
@@ -95,12 +97,14 @@ test('paid cancellations retain canonical collected money because cancellation d
     assert.equal(data.dataQuality.paidCancelledOrders, 1);
 });
 
-test('rounding uses stored amounts and integer centavos; average and zero-valued successful payments remain deterministic', async t => {
+test('legacy fractional cents are excluded without rounding; legitimate zero payments remain supported', async t => {
     records(t, [order(1, { amount: 0.1 + 0.2 }), order(2, { amount: 10.075 }), order(3, { amount: 1.005 }), order(4, { amount: 0 })]);
     const data = await overview();
-    assert.equal(data.summary.totalCollected, 11.39); assert.equal(data.summary.paidTransactions, 4);
-    assert.equal(data.summary.averageTransaction, 2.85);
-    assert.equal(data.collectionTrend.points.at(-1).amount, 11.39);
+    assert.equal(data.summary.totalCollected, 0); assert.equal(data.summary.paidTransactions, 1);
+    assert.equal(data.summary.averageTransaction, 0);
+    assert.equal(data.collectionTrend.points.at(-1).amount, 0);
+    assert.equal(data.dataQuality.invalidPaidAmounts, 3);
+    assert.equal(data.dataQuality.collectionPeriodComplete, false);
 });
 
 test('invalid monetary values are excluded explicitly rather than silently converted to zero', async t => {
@@ -295,9 +299,9 @@ test('actual HTTP route uses Cashier authorization for admin/cashier; rejects mi
     t.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
     await new Promise(resolve => server.once('listening', resolve));
     const url = `http://127.0.0.1:${server.address().port}/api/order/cashier/dashboard/overview`;
-    const admin = jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET);
-    const cashier = jwt.sign({ id: id(1) }, process.env.JWT_SECRET);
-    for (const token of [undefined, 'invalid', jwt.sign({ id: id(2) }, process.env.JWT_SECRET), jwt.sign({ id: id(2), role: 'cashier' }, process.env.JWT_SECRET)]) {
+    const admin = issueAuthToken(ADMIN_SUBJECT, 'admin');
+    const cashier = issueAuthToken(id(1), 'cashier');
+    for (const token of [undefined, 'invalid', issueAuthToken(id(2), 'customer'), issueAuthToken(id(2), 'cashier')]) {
         const res = await fetch(url, { headers: token ? { token } : {} });
         assert([401, 403].includes(res.status)); assert.equal((await res.json()).success, false);
     }
@@ -311,17 +315,7 @@ test('actual HTTP route uses Cashier authorization for admin/cashier; rejects mi
 });
 
 test('real MongoDB projection and reconciliation on a fresh isolated database', { skip: process.env.PAMO_CASHIER_DASHBOARD_INTEGRATION !== '1', timeout: 60000 }, async t => {
-    const { default: dotenv } = await import('dotenv'); dotenv.config({ quiet: true });
-    const database = 'pamo_cash_test_' + randomUUID().replaceAll('-', '').slice(0, 20);
-    t.after(async () => {
-        try {
-            if (mongoose.connection.readyState === 1) {
-                assert.equal(mongoose.connection.name, database); assert.match(database, /^pamo_cash_test_[a-f0-9]{20}$/);
-                await mongoose.connection.dropDatabase();
-            }
-        } finally { await mongoose.disconnect(); }
-    });
-    await mongoose.connect(process.env.MONGODB_URI + '/e-commerce', { dbName: database, serverSelectionTimeoutMS: 10000 });
+    await connectTestDatabase(t, mongoose, 'cashierDashboard');
     const fixtures = [order(1), order(2, { amount: 125.5, paymentMethod: 'Stripe', receiptNumber: undefined }),
         order(3, { payment: false, paidAt: undefined, status: 'Sent to Cashier', sentToCashierAt: now - 50000 }),
         order(4, { payment: false, status: 'Cancelled' }), order(5, { paidAt: undefined })];

@@ -43,9 +43,10 @@ manual confirmation remain untouched.
 
 Collections use **stored `Order.amount`**, not item snapshot sums or current
 product prices. Current reservation stores the merchandise subtotal plus the
-10-unit processing charge in that total. The endpoint neither adds nor removes
-fees. Nonnegative finite amounts are rounded to centavos before integer summation;
-unsafe amounts are reported as exclusions and an unsafe accumulated sum fails.
+10-peso processing charge in that total. The endpoint neither adds nor removes
+fees. Eligible amounts must have exact, safe centavo precision; fractional-cent
+and invalid amounts are excluded for review, not rounded into collections.
+An unsafe accumulated sum fails.
 Average is total collected divided by eligible paid transactions, rounded to
 centavos; no transactions yields zero. The optional `Order.paymentCurrency`
 snapshot identifies the unit of the stored amount; it has no default.
@@ -58,33 +59,82 @@ excluded from timestamp-sorted Recent Payments.
 Unpaid orders, including cancelled/rejected orders and unsuccessful payment
 attempts, never contribute collections. Already-paid cancelled orders retain
 their collected amount: the actual Cashier Transactions view retains them,
-cancellation preserves payment metadata, and no refund ledger exists. This API
-does not represent net receipts or pretend cancellation is a refund.
+cancellation preserves payment metadata and records eligible refund obligations.
+There is no executed-refund ledger or refund subtraction in this API. It reports
+historical collections, not net receipts; cancellation is not a completed refund.
 
-### Phase 2.1 metadata and remaining coverage limits
+### Current payment, currency, and refund boundaries
 
-Before Phase 2.1, Stripe/PayPal verification saved only `payment: true`.
-Neither flow persists a provider success/capture timestamp, session/intent ID,
-capture payload or independent transaction/receipt record. Stripe has no webhook
-or settlement lookup; PayPal creates an order but has no capture/status lookup.
-Both existing authenticated return callbacks accept `success: "true"`.
-Their success rules and authorization remain unchanged. Analytics reads this
-application truth; it does not claim independently verified provider settlement.
+New COD orders use the approved PHP monetary contract and canonical server-side
+prices. Cashier confirmation requires an unpaid `Sent to Cashier` order, COD,
+explicit PHP currency, an exact positive total, and a valid unique official
+receipt number. Its atomic update records payment, receipt, staff identity, and
+local confirmation time, then returns the order to `Packing`. Duplicate or
+conflicting confirmations do not overwrite existing evidence. Unknown historical
+currency/precision is not repaired to make an order payable.
 
-On the first unpaid-to-paid callback, an atomic update now saves numeric `paidAt`
-using the backend confirmation-time clock, matching cash confirmation and range
-boundaries. This is **local application confirmation time**, not provider
-settlement time. An existing `paidAt` is
-preserved. Already-paid retries never replace the time or populate missing
-historical metadata; concurrent callbacks remain one Order/payment. Failed or
-cancelled callbacks do not receive a payment timestamp. Creation, modification
-and provider session-creation times are never substituted for successful-payment
-time. The dashboard does not repair Orders on read.
+### Receipt index readiness (CQ-8B2)
 
-New order creation snapshots the backend's actual currency: COD/Stripe `PHP`,
-PayPal `USD`, using the same constants as the provider requests. There is **no
-global PHP invariant**. Amounts, provider requests and cash confirmation behavior
-are otherwise unchanged. Client-supplied timestamps/currencies are ignored.
+`backend/utils/receiptIndex.js` owns lazy receipt-index readiness, requested only
+after Cashier eligibility checks. It preserves the existing index exactly:
+
+```js
+{ receiptNumber: 1 }
+// Options:
+{
+    name: 'cashier_receipt_unique',
+    unique: true,
+    partialFilterExpression: { receiptNumber: { $type: 'string' } }
+}
+```
+
+Concurrent confirmations share initialization. Success is cached for the current
+connection/database/client/collection context; connection lifecycle events and
+context replacement invalidate it. Failure blocks payment and permits a later
+retry. Obsolete initialization cannot authorize payment or erase newer readiness.
+A final synchronous assertion precedes the unchanged atomic payment update.
+Duplicate keys retain HTTP 409; other readiness failures retain the safe HTTP 500.
+No schema index, global startup dependency, historical backfill, or index migration
+is introduced. Missing historical receipts remain excluded by the partial filter.
+
+Mocked tests verify these boundaries, not live MongoDB index behavior. The guard
+does not cancel operations already handed to Mongoose, alter its buffering policy,
+or detect out-of-band index deletion on an unchanged connection. Index maintenance
+requires controlled reinitialization/restart; real index and concurrency validation
+still requires the approved disposable replica set under CQ-8B3 safeguards.
+
+### Other payment boundaries
+
+Public Stripe/PayPal creation and browser-verification endpoints return HTTP 503
+before order, cart, stock, or provider work. Browser success flags are not payment
+evidence. Server-authoritative verifier utilities and webhook router factories
+exist, but neither provider webhook router is mounted in `server.js`. Their
+presence does not authorize activation or establish live settlement compatibility.
+
+Payment recovery remains a dormant metadata/decision foundation: no worker,
+scheduler, automatic inventory release, or provider execution is activated.
+Eligible paid cancellations retain payment evidence and create a durable
+`Refund Required` obligation in the cancellation/inventory transaction. Unpaid
+COD without contradictory evidence derives `Not Required`; ambiguous records
+require review. `Refund Pending`, `Refunded`, and `Refund Failed` require real
+process/evidence and are not writable states of the current workflow. No refund
+execution or manual payout-confirmation endpoint exists.
+
+See [containment](payment-containment.md), [Stripe](stripe-verification.md),
+[PayPal](paypal-verification.md), [recovery](payment-recovery.md),
+[cancellation/refunds](cancellation-refunds.md), and [PHP money](php-money.md).
+Credential rotation, isolated database concurrency, provider integration/refunds,
+and live Cloudinary operations retain documented verification limitations.
+
+### Historical Phase 2.1 context and remaining coverage limits
+
+Before the later security phases, online callbacks trusted browser success flags
+and lacked the current provider-binding/verifier infrastructure. Phase 2.1 added
+local confirmation timestamps and currency snapshots; its old PayPal checkout
+used USD. Those historical descriptions are not the current executable payment
+contract. PHP approval does not reinterpret old USD or missing-currency records.
+No historical provider identifiers, timestamps, or currencies are fabricated.
+The dashboard does not repair Orders on read.
 
 Only explicit `paymentCurrency: 'PHP'` contributes to Peso totals, transaction
 counts, trends, methods and recent payments, regardless of method label.
@@ -107,7 +157,8 @@ one unknown currency, and zero alternative provider metadata records. The
 missing-time distribution by method was empty. These counts describe the audit
 snapshot, not a permanent data guarantee; the currency cannot be safely repaired
 from that record. Full-provider Peso coverage remains limited by unknown history
-and PayPal's actual USD checkout, with no FX conversion or reconciliation added.
+and historical foreign-currency records, with no FX conversion or reconciliation
+added. The old PayPal USD checkout is disabled, not a current payment option.
 
 Consumers must respect `collectionPeriodComplete` and `trendComplete`; a valid
 response may have incomplete coverage and must not be presented as a complete
@@ -138,7 +189,8 @@ zero percentages. Zero-amount successful payments still count as transactions.
 
 Awaiting Payment is **current and range-independent**. Eligibility follows the
 existing manual confirmation guards: `status: 'Sent to Cashier'`, `payment: false`,
-`paymentMethod: 'COD'`, finite positive stored amount. Provider orders or unusable
+`paymentMethod: 'COD'`, explicit PHP currency, and an exact positive stored amount.
+Provider orders or unusable
 amounts shown in the broader workspace queue are counted explicitly as
 `nonActionableAwaitingOrders`, not as payments the Cashier can confirm.
 
@@ -157,22 +209,28 @@ ID, confirmation identity, authentication data or provider payload is returned.
 One projected lean Order cursor reads canonical paid records and the current
 queue. It retains only five records per detail list plus aggregate buckets and
 methods. There are no catalog/user joins, N+1 reads, writes, new indexes, provider
-calls, caches or dependencies. PAMO analytics and both frontends remain frozen.
+calls, caches or dependencies introduced by the overview. This endpoint does not
+mutate orders, inventory, payment evidence, or refund obligations.
 
 ## Verification
 
-Run `node --test tests/*.test.js` from `backend`. Focused tests execute real
+From the repository root, run
+`node --test backend/tests/cashierDashboard.test.js` with all integration flags
+disabled for synthetic verification. Focused tests execute real
 analytics functions with projected cursor fixtures, plus the actual HTTP route
 and existing Cashier authorization. They cover range/date/money semantics,
 coverage gaps, reconciliation, bounded ordering, projection and safe failures.
 
-`PAMO_CASHIER_DASHBOARD_INTEGRATION=1` additionally enables the real MongoDB test.
+`PAMO_CASHIER_DASHBOARD_INTEGRATION` explicitly opts into the real MongoDB test.
 It asserts and uses a fresh `pamo_cash_test_*` database, never writes the
 application database, verifies persisted-record reconciliation and read-only
 behavior, and removes only its own isolated test database afterward.
 
-`PAMO_INVENTORY_INTEGRATION=1` enables the existing isolated inventory/payment
-suite, extended with actual request-currency assertions, persisted confirmation
-times, concurrent retry stability, unchanged amounts/status/stock and preserved
-legacy metadata. Provider API calls are mocked; no real charge/capture is sent.
-`PAMO_DASHBOARD_INTEGRATION=1` runs the unchanged PAMO dashboard integration suite.
+`PAMO_INVENTORY_INTEGRATION` and `PAMO_DASHBOARD_INTEGRATION` opt into the separate
+inventory and PAMO dashboard database suites. CQ-8B3 replaced their legacy
+application-environment loaders with the shared isolated-test helper; they no
+longer read `.env` or use application connection settings. Do not enable them
+without a verified isolated server/configuration; generated names alone do not
+establish safe isolation. Provider fixtures never establish real payment
+settlement. See the root [testing guide](../../README.md#seven-opt-in-mongodb-integration-suites)
+for all seven suites, their configuration ownership, and verification limits.

@@ -6,18 +6,20 @@ const validMethod = row => row && (row.method === null || typeof row.method === 
 const validBreakdown = data => Array.isArray(data) && data.every(validMethod)
   && new Set(data.map(row => row.method)).size === data.length
 
-const PaymentMethodBreakdown = ({ status, data, complete, formatCurrency }) => {
+const PaymentMethodBreakdown = ({ status, data, complete, formatCurrency, rangeLabel = 'this period' }) => {
   const valid = typeof complete === 'boolean' && validBreakdown(data)
   let message
   if (status === 'loading') message = 'Loading payment methods…'
   else if (status !== 'success' || !valid) message = 'Payment-method data unavailable.'
   else if (!data.length) message = complete
-    ? 'No payment methods recorded for this period.' : 'No payment methods recorded in the available data for this period.'
+    ? `No confirmed payments for ${rangeLabel}.` : 'No payment methods recorded in the available data for this period.'
   const qualityNote = status === 'success' && valid && !complete ? 'Payment-method data for this period is incomplete.' : null
 
-  if (message) return <div role='status' aria-busy={status === 'loading'} className='flex min-h-40 min-w-0 flex-1 flex-col items-center justify-center gap-2 py-6 sm:min-h-48'>
+  if (message) return <div role='status' aria-busy={status === 'loading'} data-empty={status === 'success' && valid ? '' : undefined} className='cashier-dashboard-empty flex min-h-40 min-w-0 flex-1 flex-col items-center justify-center gap-2 py-6 sm:min-h-48'>
+    {status === 'success' && valid && <span aria-hidden='true' className='cashier-dashboard-empty-symbol'>—</span>}
     <p className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
     {qualityNote && <p className='max-w-xs text-center text-xs leading-5 text-slate-500 dark:text-slate-400'>{qualityNote}</p>}
+    {status === 'success' && valid && !qualityNote && <p className='cashier-dashboard-empty-detail'>Payment-method reporting becomes available after confirmation.</p>}
   </div>
 
   return <div className='flex min-h-40 min-w-0 flex-1 flex-col justify-center pt-4 sm:min-h-48 [container-type:inline-size]'>

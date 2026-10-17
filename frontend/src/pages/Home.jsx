@@ -4,16 +4,21 @@ import LatestCollection from '../components/LatestCollection'
 import BestSeller from '../components/BestSeller'
 import OurPolicy from '../components/OurPolicy'
 import NewsletterBox from '../components/NewsletterBox'
+import ProgramFinder from '../components/ProgramFinder'
+import OrderingGuide from '../components/OrderingGuide'
+import '../components/HomePage.css'
 
 const Home = () => {
   return (
-    <div>
+    <div className='home-page'>
       <Hero/>
-      <div className='content-container'>
+      <div className='home-content'>
+      <ProgramFinder/>
       <LatestCollection/>
       <BestSeller/>
+      <OrderingGuide/>
       <OurPolicy/>
-      <NewsletterBox/>
+      <NewsletterBox home/>
       </div>
     </div>
   )

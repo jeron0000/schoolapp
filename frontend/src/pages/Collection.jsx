@@ -1,132 +1,548 @@
-import React, { useContext, useMemo, useRef, useState } from 'react'
-import { ShopContext } from '../context/shopContext'
-import { assets } from '../assets/assets';
-import Title from '../components/Title';
-import ProductItem from '../components/ProductItem';
-import { productGenders, productPrograms } from '../../../shared/productTaxonomy';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ShopContext } from "../context/shopContext";
+import { Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  productGenders,
+  productPrograms,
+} from "../../../shared/productTaxonomy";
+import ProductItem from "../components/ProductItem";
+import SearchBar from "../components/SearchBar";
+import CollectionFilters from "../components/CollectionFilters";
+import CollectionFilterDrawer from "../components/CollectionFilterDrawer";
+import "../components/StorefrontFoundation.css";
+import "./Collection.css";
+
+const PAGE_SIZE = 24;
 
 const Collection = () => {
-  
-  const { products , search , showSearch } = useContext(ShopContext);
-  const [showFilter, setShowFilter] = useState(false);
-  const [category,setCategory] = useState([]);
-  const [subCategory,setSubCategory] = useState([]);
-  const [sortType,setSortType] = useState('relevant');
-  const productResultsRef = useRef(null);
+  const {
+    products,
+    search,
+    setSearch,
+    showSearch,
+    setShowSearch,
+    productsLoading = false,
+    productError = "",
+    getProductsData,
+  } = useContext(ShopContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filterOpen, setFilterOpen] = useState(false);
+  const resultsRef = useRef(null);
+  // Import a legacy navbar search once, then the URL owns Collection search/history.
+  const initialSearch = useRef(showSearch ? search : "");
+  const inheritsSearch = !searchParams.has("q") && showSearch && Boolean(search);
+  const query = searchParams.get("q") || "";
+  // Page changes should not invalidate the full-catalog filter/sort memo.
+  const genderValues = JSON.stringify(searchParams.getAll("gender"));
+  const programValues = JSON.stringify(searchParams.getAll("program"));
+  const genders = useMemo(
+    () => [
+      ...new Set(
+        JSON.parse(genderValues).filter((value) => productGenders.includes(value)),
+      ),
+    ],
+    [genderValues],
+  );
+  const programs = useMemo(
+    () => [
+      ...new Set(
+        JSON.parse(programValues).filter((value) => productPrograms.includes(value)),
+      ),
+    ],
+    [programValues],
+  );
+  const featuredOnly = searchParams.get("featured") === "true";
+  const requestedSort = searchParams.get("sort");
+  const sortType = ["low-high", "high-low"].includes(requestedSort)
+    ? requestedSort
+    : "relevant";
+  const closeFilters = useCallback(() => setFilterOpen(false), []);
 
-  const scrollToProducts = () => {
-    productResultsRef.current?.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-      block: 'start'
+  useEffect(() => {
+    const inherited = initialSearch.current;
+    initialSearch.current = "";
+    if (!searchParams.has("q") && inherited) {
+      setSearchParams(
+        (previous) => {
+          const next = new URLSearchParams(previous);
+          next.set("q", inherited);
+          next.delete("page");
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    const currentQuery = searchParams.get("q") || "";
+    if (search !== currentQuery) setSearch(currentQuery);
+    if (showSearch !== Boolean(currentQuery))
+      setShowSearch(Boolean(currentQuery));
+  }, [
+    searchParams,
+    search,
+    showSearch,
+    setSearch,
+    setShowSearch,
+    setSearchParams,
+  ]);
+
+  const toggleFilter = (key, value) =>
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      const current = next.getAll(key);
+      const selected = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      next.delete(key);
+      selected.forEach((item) => next.append(key, item));
+      next.delete("page");
+      return next;
     });
-  }
+  const clearFilters = () =>
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      for (const key of ["gender", "program", "featured"]) next.delete(key);
+      next.delete("page");
+      return next;
+    });
+  const changeSearch = (value) => {
+    setSearch(value);
+    setShowSearch(Boolean(value));
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("q", value);
+        next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const clearCriteria = () => {
+    setSearch("");
+    setShowSearch(false);
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      for (const key of ["gender", "program", "featured", "q"])
+        next.delete(key);
+      next.delete("page");
+      return next;
+    });
+  };
+  const changeSort = (value) =>
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (value === "relevant") next.delete("sort");
+      else next.set("sort", value);
+      next.delete("page");
+      return next;
+    });
+  const removeFeatured = () =>
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.delete("featured");
+      next.delete("page");
+      return next;
+    });
 
-  const toggleCategory = (e) => { 
-    
-    if (category.includes(e.target.value)) {
-      setCategory(prev=> prev.filter(item => item !== e.target.value))
-    }
-    else {
-      setCategory(prev=> [...prev,e.target.value])
-    }
+  const filteredProducts = useMemo(() => {
+    let result = products.slice();
+    if (featuredOnly) result = result.filter((item) => item.BestSeller);
+    const term = query.trim().toLowerCase();
+    if (term)
+      result = result.filter((item) => item.name.toLowerCase().includes(term));
+    if (genders.length)
+      result = result.filter((item) => genders.includes(item.category));
+    if (programs.length)
+      result = result.filter((item) => programs.includes(item.subCategory));
+    if (sortType === "low-high") result.sort((a, b) => a.price - b.price);
+    else if (sortType === "high-low") result.sort((a, b) => b.price - a.price);
+    return result;
+  }, [products, featuredOnly, query, genders, programs, sortType]);
 
-  }
+  const rawPage = searchParams.get("page");
+  const pageNumber = Number(rawPage);
+  const requestedPage =
+    /^\d+$/.test(rawPage || "") &&
+    Number.isSafeInteger(pageNumber) && pageNumber > 0
+      ? pageNumber
+      : 1;
+  const pageCount = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageProducts = filteredProducts.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const toggleSubCategory = (e) => {
+  useEffect(() => {
+    // Do not discard a saved page while the authoritative catalog is unavailable.
+    if (
+      productsLoading || productError || inheritsSearch || !searchParams.has("page")
+    )
+      return;
+    const canonicalPage = currentPage === 1 ? null : String(currentPage);
+    if (searchParams.getAll("page").length === 1 && rawPage === canonicalPage)
+      return;
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        if (canonicalPage === null) next.delete("page");
+        else next.set("page", canonicalPage);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    productsLoading, productError, inheritsSearch, searchParams,
+    rawPage, currentPage, setSearchParams,
+  ]);
 
-    if (subCategory.includes(e.target.value)) {
-      setSubCategory(prev=> prev.filter(item => item !== e.target.value))
-    }
-    else {
-      setSubCategory(prev=> [...prev,e.target.value])
-    }
-    
-  }
+  const changePage = (page) => {
+    if (page < 1 || page > pageCount || page === currentPage) return;
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (page === 1) next.delete("page");
+      else next.set("page", String(page));
+      return next;
+    });
+  };
 
-  const filterProducts = useMemo(() => {
-    
-    let productsCopy = products.slice();
-
-    if (showSearch && search) {
-      productsCopy =productsCopy.filter(item => item.name.toLowerCase().includes(search.toLowerCase()));
-    }
-
-    if (category.length > 0) {
-      productsCopy = productsCopy.filter(item => category.includes(item.category));
-  }
-
-  if(subCategory.length > 0) {
-    productsCopy = productsCopy.filter(item => subCategory.includes(item.subCategory));
-  }
-
-     switch (sortType) {
-       case 'low-high':
-       productsCopy.sort((a, b) => a.price - b.price);
-      break;
-
-      case 'high-low':
-       productsCopy.sort((a, b) => b.price - a.price);
-      break;
-
-      default:
-         break;
-   }
-   return productsCopy;
-  }, [category, subCategory, search, showSearch, products, sortType]);
+  const selections = [
+    ...genders.map((value) => ["gender", value]),
+    ...programs.map((value) => ["program", value]),
+  ];
+  const filterCount = selections.length + Number(featuredOnly);
+  const hasCriteria = filterCount > 0 || Boolean(query);
+  const cueImage = products.find((item) => item.image?.[0])?.image[0];
 
   return (
-
-    <section className='page-section grid grid-cols-1 gap-5 pt-6 sm:pt-8 lg:grid-cols-[11rem_10rem_minmax(0,1fr)] lg:gap-x-6 lg:gap-y-4 lg:pt-6 xl:grid-cols-[11rem_13rem_minmax(0,1fr)]'>
-      <div className='min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-1'>
-        <p className='eyebrow mb-3'>Find your campus essentials</p>
-        <Title text1={'THE'} text2={<span className='text-amber-500 dark:text-amber-400'>COLLECTION</span>}/>
-        <p className='max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400'>Browse by category, choose your essentials, and find your fit.</p>
-      </div>
-      <div className='relative h-44 min-w-0 overflow-hidden rounded-xl bg-slate-100 sm:h-40 lg:col-start-3 lg:row-start-1 lg:h-36 dark:bg-slate-900'>
-        {/* Trim the image's white frame and focus the short crop on the students. */}
-        <img src={assets.collection_banner} alt='Students wearing school uniforms with campus essentials' width='1950' height='807' className='absolute left-[-2%] top-[-6%] h-[112%] w-[104%] max-w-none object-cover object-[65%_10%]' />
-        <div aria-hidden='true' className='absolute inset-0 bg-gradient-to-r from-slate-100 from-45% via-slate-100/95 via-60% to-transparent to-95% sm:from-35% sm:via-[38%] sm:to-[52%] dark:from-slate-900 dark:via-slate-900/95' />
-        <div className='relative flex h-full max-w-[240px] flex-col items-start justify-center px-4 sm:max-w-[260px] sm:px-6'>
-          <h2 className='text-lg font-semibold leading-5 tracking-tight'>Complete<br/>Your School Look</h2>
-          <p className='mt-1 text-xs leading-4 text-slate-600 dark:text-slate-400'>Quality uniforms and accessories<br className='hidden sm:block'/> for a better school life.</p>
-          <button type='button' onClick={scrollToProducts} className='mt-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-300 focus-visible:outline-amber-600'>
-            Shop Now <span aria-hidden='true'>→</span>
-          </button>
+    <section className="collection-page" aria-labelledby="collection-heading">
+      <div className="collection-container">
+        <header className="collection-header">
+          <div className="collection-intro">
+            <nav className="collection-breadcrumb" aria-label="Breadcrumb">
+              <Link to="/">Home</Link>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page">Collection</span>
+            </nav>
+            <div className="collection-heading-accent">
+              <p className="collection-eyebrow">
+                <span className="collection-copy-desktop">
+                  Shop / campus essentials
+                </span>
+                <span className="collection-copy-tablet">
+                  Find your campus essentials
+                </span>
+              </p>
+              <h1 id="collection-heading">
+                THE <span className="collection-title-accent">COLLECTION</span>
+              </h1>
+            </div>
+            <p className="collection-description">
+              <span className="collection-copy-desktop">
+                Browse your program and gender, or search for the exact item you
+                need.
+              </span>
+              <span className="collection-copy-tablet">
+                Browse the right merchandise for your program and gender.
+              </span>
+              <span className="collection-copy-mobile">
+                Find the essentials that fit your campus life.
+              </span>
+            </p>
+          </div>
+          <aside
+            className="collection-merchandise-info"
+            aria-label="Campus merchandise information"
+          >
+            <div>
+              <p className="collection-info-eyebrow">For every campus day</p>
+              <h2>
+                <span className="collection-copy-desktop">
+                  Find your essentials.
+                </span>
+                <span className="collection-copy-tablet">
+                  Campus essentials. Easier to find.
+                </span>
+              </h2>
+              <p>
+                <span className="collection-copy-desktop">
+                  Choose a program and explore the available items.
+                </span>
+                <span className="collection-copy-tablet">
+                  Choose a program, compare products and review sizes on the
+                  product page.
+                </span>
+              </p>
+            </div>
+            {cueImage && <img src={cueImage} alt="" loading="lazy" />}
+          </aside>
+        </header>
+        <div className="collection-layout">
+          <aside
+            className="collection-filter-sidebar"
+            aria-label="Product filters"
+          >
+            <div className="collection-filter-heading">
+              <h2>Filters</h2>
+              <button type="button" onClick={clearFilters}>
+                Clear all
+              </button>
+            </div>
+            <CollectionFilters
+              genders={genders}
+              programs={programs}
+              onToggle={toggleFilter}
+            />
+            <div className="collection-filter-help">
+              <h3>Need something specific?</h3>
+              <p>Try searching the collection above.</p>
+            </div>
+          </aside>
+          <div className="collection-results" aria-busy={productsLoading}>
+            <div className="collection-tools">
+              <SearchBar value={query} onChange={changeSearch} />
+              <button
+                type="button"
+                className="collection-filter-trigger collection-outline-action"
+                onClick={() => setFilterOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={filterOpen}
+                aria-controls="collection-filter-drawer"
+              >
+                <SlidersHorizontal
+                  size={18}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />{" "}
+                Filters{filterCount ? " (" + filterCount + ")" : ""}
+              </button>
+              <label className="collection-sort">
+                <span>Sort by</span>
+                <select
+                  aria-label="Sort products"
+                  value={sortType}
+                  onChange={(event) => changeSort(event.target.value)}
+                >
+                  <option value="relevant">Relevant</option>
+                  <option value="low-high">Price: Low to High</option>
+                  <option value="high-low">Price: High to Low</option>
+                </select>
+              </label>
+              <p
+                ref={resultsRef}
+                tabIndex={-1}
+                id="collection-results"
+                className="collection-results-count"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {productsLoading && !products.length ? (
+                  <span>Loading essentials…</span>
+                ) : (
+                  <span>
+                    <strong>{filteredProducts.length}</strong>{" "}
+                    {filteredProducts.length === 1 ? "essential" : "essentials"}{" "}
+                    found
+                  </span>
+                )}
+                <small className="collection-result-note">
+                  Gender and program filters
+                </small>
+              </p>
+            </div>
+            <div
+              className={
+                "collection-active-filters" +
+                (hasCriteria ? " has-filters" : "")
+              }
+            >
+              {hasCriteria ? (
+                <>
+                  <p>Filters applied</p>
+                  {selections.map(([key, value]) => (
+                    <button
+                      key={key + value}
+                      type="button"
+                      className="collection-filter-chip"
+                      onClick={() => toggleFilter(key, value)}
+                      aria-label={"Remove " + value + " filter"}
+                    >
+                      {value}{" "}
+                      <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  ))}
+                  {featuredOnly && (
+                    <button
+                      type="button"
+                      className="collection-filter-chip"
+                      onClick={removeFeatured}
+                      aria-label="Remove featured filter"
+                    >
+                      Featured{" "}
+                      <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  )}
+                  {query && (
+                    <button
+                      type="button"
+                      className="collection-filter-chip"
+                      onClick={() => changeSearch("")}
+                      aria-label="Remove search filter"
+                    >
+                      Search: {query}{" "}
+                      <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="collection-clear-action"
+                    onClick={clearCriteria}
+                  >
+                    Clear all
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>All merchandise</p>
+                  <span>Browse available catalog products</span>
+                </>
+              )}
+            </div>
+            {productError && (
+              <div className="collection-message">
+                <h2>
+                  Unable to {products.length ? "refresh" : "load"} collection
+                </h2>
+                <p>{productError}</p>
+                <button
+                  type="button"
+                  className="collection-brand-action"
+                  onClick={() => getProductsData()}
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {productsLoading && !products.length ? (
+              <div className="collection-message">
+                <p>Loading your campus essentials…</p>
+              </div>
+            ) : (
+              <>
+                <div
+                  id="collection-product-grid"
+                  className="collection-product-grid"
+                >
+                  {pageProducts.map((item) => (
+                    <ProductItem
+                      key={item._id}
+                      id={item._id}
+                      name={item.name}
+                      image={item.image}
+                      price={item.price}
+                      category={item.category}
+                      subCategory={item.subCategory}
+                      collection
+                    />
+                  ))}
+                </div>
+                {filteredProducts.length > 0 && (
+                  <nav
+                    className="collection-pagination"
+                    aria-label="Collection pagination"
+                  >
+                    <p
+                      className="collection-page-range"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      {`Showing ${pageStart + 1}–${pageStart + pageProducts.length} of ${filteredProducts.length} ${filteredProducts.length === 1 ? "essential" : "essentials"}`}
+                    </p>
+                    {pageCount > 1 && (
+                      <div className="collection-page-controls">
+                        <button
+                          type="button"
+                          className="collection-outline-action"
+                          aria-label="Previous product page"
+                          aria-controls="collection-product-grid"
+                          aria-disabled={currentPage === 1}
+                          onClick={() => changePage(currentPage - 1)}
+                        >
+                          Previous
+                        </button>
+                        <span aria-current="page">
+                          Page {currentPage} of {pageCount}
+                        </span>
+                        <button
+                          type="button"
+                          className="collection-outline-action"
+                          aria-label="Next product page"
+                          aria-controls="collection-product-grid"
+                          aria-disabled={currentPage === pageCount}
+                          onClick={() => changePage(currentPage + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </nav>
+                )}
+                {!filteredProducts.length && !productError && (
+                  <div className="collection-message">
+                    <Search
+                      className="collection-message-icon"
+                      size={24}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                    <h2>
+                      {products.length
+                        ? "No matching essentials"
+                        : "No essentials available"}
+                    </h2>
+                    <p>
+                      {products.length
+                        ? "Try a different search or reset your gender and program filters."
+                        : "Check back for available campus merchandise."}
+                    </p>
+                    {hasCriteria && (
+                      <button
+                        type="button"
+                        className="collection-brand-action"
+                        onClick={clearCriteria}
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-      <aside className='min-w-0 self-start lg:col-start-1 lg:row-start-2'>
-          <div className='panel overflow-hidden rounded-xl p-4'>
-            <button type='button' onClick={()=>setShowFilter(!showFilter)} className='flex min-h-11 w-full items-center justify-between gap-2 text-sm font-semibold lg:min-h-6 lg:text-xs' aria-expanded={showFilter} aria-controls='catalog-filters'>
-              Filters <img className={'h-3 lg:hidden theme-icon ' + (showFilter ? 'rotate-90' : '')} src={assets.dropdown_icon} alt='' />
-            </button>
-            <div id='catalog-filters' className={(showFilter ? 'block' : 'hidden') + ' lg:block'}>
-              <fieldset className='mt-3 border-t border-slate-200 pt-3 dark:border-slate-800'>
-                <legend className='sr-only'>Gender</legend><p className='eyebrow mb-2 lg:text-[10px] lg:tracking-[0.08em]'>GENDER</p>
-                {productGenders.map(value => <label key={value} className='flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-600 hover:text-slate-900 lg:min-h-8 lg:text-xs dark:text-slate-400 dark:hover:text-slate-100'><input className='h-4 w-4 rounded accent-amber-500 dark:accent-amber-400' type='checkbox' value={value} checked={category.includes(value)} onChange={toggleCategory}/>{value}</label>)}
-              </fieldset>
-              <fieldset className='mt-3 border-t border-slate-200 pt-3 dark:border-slate-800'>
-                <legend className='sr-only'>Program</legend><p className='eyebrow mb-2 lg:text-[10px] lg:tracking-[0.08em]'>PROGRAM</p>
-                {productPrograms.map(value => <label key={value} className='flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-600 hover:text-slate-900 lg:min-h-8 lg:text-xs dark:text-slate-400 dark:hover:text-slate-100'><input className='h-4 w-4 rounded accent-amber-500 dark:accent-amber-400' type='checkbox' value={value} checked={subCategory.includes(value)} onChange={toggleSubCategory}/>{value}</label>)}
-              </fieldset>
-            </div>
-          </div>
-      </aside>
-      <div ref={productResultsRef} className='min-w-0 scroll-mt-6 lg:col-span-2 lg:col-start-2 lg:row-start-2'>
-          <div className='mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center'>
-            <p className='text-xs text-slate-500 dark:text-slate-400'><span className='font-semibold text-slate-900 dark:text-slate-100'>{filterProducts.length}</span> {filterProducts.length === 1 ? 'essential' : 'essentials'} found</p>
-            <label className='flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400'>Sort by
-              <select aria-label='Sort products' value={sortType} onChange={(e)=>setSortType(e.target.value)} className='field min-h-11 w-auto flex-1 rounded-lg px-3 py-2 text-xs sm:max-w-48 sm:flex-none lg:min-h-9'>
-                <option value='relevant'>Relevant</option><option value='low-high'>Price: Low to High</option><option value='high-low'>Price: High to Low</option>
-              </select>
-            </label>
-          </div>
-          <div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 [&>a]:rounded-xl [&>a]:p-2 [&>a>div:last-child]:pb-1 [&>a>div:last-child]:pt-2 [&_h3]:line-clamp-2 [&_h3]:h-8 [&_h3]:min-h-8 [&_h3]:text-xs [&_h3]:leading-4 [&_img]:object-contain [&_p]:text-sm'>
-            {filterProducts.map((item,index)=>(<ProductItem key={index} name={item.name} id={item._id} price={item.price} image={item.image}/>))}
-          </div>
-          {filterProducts.length === 0 && <div className='panel px-5 py-16 text-center'><img src={assets.search_icon} className='mx-auto mb-5 w-7 opacity-40 theme-icon' alt=''/><h3 className='text-lg font-semibold'>No matching essentials</h3><p className='mx-auto mt-3 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400'>Try another search or adjust your gender and program filters.</p></div>}
-      </div>
+      {filterOpen && (
+        <CollectionFilterDrawer
+          genders={genders}
+          programs={programs}
+          onToggle={toggleFilter}
+          onReset={clearFilters}
+          count={filteredProducts.length}
+          onClose={closeFilters}
+          fallbackFocusRef={resultsRef}
+        />
+      )}
     </section>
-  )
-}
+  );
+};
 
-export default Collection
+export default Collection;

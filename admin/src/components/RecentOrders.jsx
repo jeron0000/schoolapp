@@ -1,10 +1,19 @@
+import { useState } from 'react'
 import { OrderStatusBadge } from './OrderDetails'
 import { getOrderStatusLabel, orderDate } from '../utils/orderPresentation'
+import { Copy } from './DashboardIcons'
+import { formatOrderMoney } from '../../../shared/money.js'
 
-const cellClass = 'block min-w-0 [overflow-wrap:anywhere] [@container(min-width:40rem)]:table-cell [@container(min-width:40rem)]:py-3 [@container(min-width:40rem)]:pr-3 [@container(min-width:40rem)]:align-top'
-const labelClass = 'sr-only [@container(min-width:40rem)]:hidden'
-
-const RecentOrders = ({ status, orders, formatMoney }) => {
+const RecentOrders = ({ status, orders }) => {
+  const [copyFeedback, setCopyFeedback] = useState('')
+  const copyOrderId = async id => {
+    try {
+      await navigator.clipboard.writeText(id)
+      setCopyFeedback(`Copied full order ID #${id}.`)
+    } catch {
+      setCopyFeedback(`Unable to copy. Full order ID: ${id}`)
+    }
+  }
   // The overview endpoint returns at most six orders, already newest first.
   const valid = Array.isArray(orders) && orders.length <= 6
     && orders.every(order => order && typeof order._id === 'string' && order._id.trim()
@@ -16,31 +25,32 @@ const RecentOrders = ({ status, orders, formatMoney }) => {
   else if (!orders.length) message = 'No recent orders.'
 
   if (message) return (
-    <div aria-busy={status === 'loading'} className='flex min-h-32 min-w-0 flex-1 items-center justify-center py-6'>
-      <p role='status' className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
+    <div aria-busy={status === 'loading'} className='dashboard-state'>
+      <p role='status'>{message}</p>
     </div>
   )
 
   return (
-    <div className='min-w-0 pt-4 [container-type:inline-size]'>
-      <table role='table' className='block w-full table-fixed text-left text-xs [@container(min-width:40rem)]:table'>
+    <div className='dashboard-recent-orders'>
+      <table role='table'>
         <caption className='sr-only'>Latest orders, newest first</caption>
-        <thead role='rowgroup' className='hidden [@container(min-width:40rem)]:table-header-group'>
-          <tr role='row'>{['Order', 'Student', 'Amount', 'Date', 'Status'].map(heading => <th key={heading} role='columnheader' scope='col' className='border-b border-slate-200 pb-3 pr-3 font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400'>{heading}</th>)}</tr>
+        <thead role='rowgroup'>
+          <tr role='row'>{['Order', 'Student', 'Amount', 'Status'].map(heading => <th key={heading} role='columnheader' scope='col'>{heading}</th>)}</tr>
         </thead>
-        <tbody role='rowgroup' className='block [@container(min-width:40rem)]:table-row-group'>
+        <tbody role='rowgroup'>
           {orders.map(order => {
             const date = orderDate(Number.isFinite(order.date) ? order.date : undefined)
-            return <tr key={order._id} role='row' className='grid min-w-0 gap-x-3 gap-y-2 border-b border-slate-100 py-3 last:border-b-0 [@container(min-width:20rem)]:grid-cols-2 [@container(min-width:40rem)]:table-row dark:border-slate-800'>
-              <td role='cell' className={cellClass + ' font-semibold leading-5 text-slate-950 dark:text-slate-100'}><span className={labelClass}>Order: </span>#{order._id}</td>
-              <td role='cell' className={cellClass + ' leading-5 text-slate-600 dark:text-slate-300'}><span className={labelClass}>Student: </span>{typeof order.customerName === 'string' && order.customerName.trim() ? order.customerName : 'Name not provided'}</td>
-              <td role='cell' className={cellClass + ' font-semibold leading-5 tabular-nums text-slate-950 dark:text-slate-100'}><span className={labelClass}>Amount: </span>{Number.isFinite(order.amount) && order.amount >= 0 ? formatMoney(order.amount) : 'Unavailable'}</td>
-              <td role='cell' className={cellClass + ' leading-5 text-slate-500 dark:text-slate-400'}><span className={labelClass}>Date: </span>{date.date}{date.time && <span className='block'>{date.time}</span>}</td>
-              <td role='cell' className={cellClass + ' [@container(min-width:20rem)]:col-span-2'}><span className={labelClass}>Status: </span><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)} /></td>
+            return <tr key={order._id} role='row'>
+              <td role='cell' className='dashboard-order-id'><span className='dashboard-cell-label'>Order: </span><button type='button' onClick={() => copyOrderId(order._id)} title={`Full order ID: ${order._id}`} aria-label={`Copy full order ID ${order._id}`} className='dashboard-copy-order'>#{order._id.length > 14 ? order._id.slice(0, 8) + '…' + order._id.slice(-4) : order._id}<Copy size={14} aria-hidden='true' /></button><span className='dashboard-order-date'>{date.date}{date.time && <span>{date.time}</span>}</span></td>
+              <td role='cell'><span className='dashboard-cell-label'>Student: </span>{typeof order.customerName === 'string' && order.customerName.trim() ? order.customerName : 'Name not provided'}</td>
+              <td role='cell' className='dashboard-order-amount'><span className='dashboard-cell-label'>Amount: </span>{formatOrderMoney(order.amount, order)}</td>
+              <td role='cell'><span className='dashboard-cell-label'>Status: </span><OrderStatusBadge status={order.status} label={getOrderStatusLabel(order)} /></td>
             </tr>
           })}
         </tbody>
       </table>
+      <p role='status' className='dashboard-copy-feedback'>{copyFeedback}</p>
+      <p className='dashboard-panel-note'>Copy the full reference, then open Orders to view its record.</p>
     </div>
   )
 }

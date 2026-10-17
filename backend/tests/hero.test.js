@@ -1,10 +1,12 @@
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
+import { issueAuthToken } from '../utils/authTokens.js';
+import jwt from 'jsonwebtoken';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { Writable } from 'node:stream';
-import { randomUUID } from 'node:crypto';
+import { connectTestDatabase } from './helpers/database.js';
 import { v2 as cloudinary } from 'cloudinary';
 import heroModel from '../models/heroSlideModel.js';
 import adminAuth from '../middleware/adminAuth.js';
@@ -236,18 +238,18 @@ test('failed reorder never claims success or falls back to independent writes', 
 test('real HTTP routes retain Admin middleware and reject customer/Cashier/forged roles before upload', async t => {
     t.mock.method(console, 'log', () => {}); t.mock.method(heroModel, 'find', () => query([])); t.mock.method(cloudinary.uploader, 'upload_stream', () => assert.fail('Unauthorized upload'));
     for (const route of heroRouter.stack.filter(layer => layer.route).map(layer => layer.route)) if (route.path !== '/list') assert.equal(route.stack[0].handle, adminAuth);
-    const base = await server(t); const tokens = [undefined, 'invalid', jwt.sign({ id: id(1) }, process.env.JWT_SECRET), jwt.sign({ id: id(1), role: 'cashier' }, process.env.JWT_SECRET), jwt.sign({ id: id(1), role: 'admin' }, process.env.JWT_SECRET)];
+    const base = await server(t); const tokens = [undefined, 'invalid', issueAuthToken(id(1), 'customer'), issueAuthToken(id(1), 'cashier'), jwt.sign({ sub: id(1), role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '8h' })];
     for (const token of tokens) for (const [method, endpoint] of [['GET', '/admin/list'], ['POST', '/add'], ['PATCH', '/reorder'], ['PATCH', '/' + id(1)], ['DELETE', '/' + id(1)]]) {
         const res = await fetch(base + endpoint, { method, headers: token ? { token } : {} }); assert.equal((await res.json()).success, false);
     }
-    const admin = jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET);
+    const admin = issueAuthToken(ADMIN_SUBJECT, 'admin');
     const allowed = await fetch(base + '/admin/list', { headers: { token: admin } }); assert.deepEqual(await allowed.json(), { success: true, slides: [] });
     const publicList = await fetch(base + '/list'); assert.deepEqual(await publicList.json(), { success: true, slides: [] });
 });
 
 test('real multipart requests reject malformed, missing, forged MIME and oversized files; valid Admin upload succeeds', async t => {
     t.mock.method(heroModel, 'findOne', () => query(null)); t.mock.method(heroModel, 'create', async data => slide(1, data)); const calls = provider(t);
-    const base = await server(t), token = jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET);
+    const base = await server(t), token = issueAuthToken(ADMIN_SUBJECT, 'admin');
     const send = async (buffer, mime = 'image/png', field = 'image', fields = {}) => { const form = new FormData(); form.set('altText', 'Uniforms'); for (const [key, value] of Object.entries(fields)) form.set(key, value); if (buffer !== undefined) form.set(field, new Blob([buffer], { type: mime }), 'hero.png'); return fetch(base + '/add', { method: 'POST', headers: { token }, body: form }); };
     for (const [buffer, mime, field, expected] of [[undefined, 'image/png', 'image', 400], [png, 'application/octet-stream', 'image', 400], [Buffer.from('MZ'), 'image/png', 'image', 400], [png, 'image/png', 'wrong', 400], [Buffer.alloc(HERO_MAX_FILE_BYTES + 1), 'image/png', 'image', 413]]) {
         const res = await send(buffer, mime, field); assert.equal(res.status, expected); assert.equal((await res.json()).success, false);
@@ -264,9 +266,8 @@ test('unexpected multipart server errors are not mislabeled as invalid client in
 });
 
 test('Hero MongoDB lifecycle on a fresh isolated database with mocked Cloudinary', { skip: process.env.PAMO_HERO_INTEGRATION !== '1', timeout: 60000 }, async t => {
-    const { default: dotenv } = await import('dotenv'); dotenv.config({ quiet: true }); const database = 'pamo_hero_test_' + randomUUID().replaceAll('-', '').slice(0, 20);
-    t.after(async () => { try { if (mongoose.connection.readyState === 1) { assert.equal(mongoose.connection.name, database); assert.match(database, /^pamo_hero_test_[a-f0-9]{20}$/); await mongoose.connection.dropDatabase(); } } finally { await mongoose.disconnect(); } });
-    await mongoose.connect(process.env.MONGODB_URI + '/e-commerce', { dbName: database, serverSelectionTimeoutMS: 10000 }); await heroModel.init(); provider(t);
+    await connectTestDatabase(t, mongoose, 'hero');
+    await heroModel.init(); provider(t);
     const first = response(), second = response(); await addHeroSlide(createRequest({ isActive: 'true' }), first); await addHeroSlide(createRequest(), second); assert.equal(first.code, 201); assert.equal(second.code, 201);
     let list = response(); await listHeroSlides({}, list); assert.equal(list.body.slides.length, 1); assert.equal((await heroModel.findById(first.body.slide._id)).imagePublicId.length > 0, true);
     const reordered = response(); await reorderHeroSlides({ body: { orderedIds: [String(second.body.slide._id), String(first.body.slide._id)] } }, reordered); assert.equal(reordered.body.success, true);

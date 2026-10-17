@@ -1,110 +1,327 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import axios from 'axios'
-import { toast } from 'react-toastify'
-import { ShopContext } from '../context/shopContext'
-import CustomerOrderCard from '../components/CustomerOrderCard'
-import { getOrderPresentation, orderFilters } from '../utils/orderPresentation'
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { RefreshCw, Search, ShoppingBag } from "lucide-react";
+import "../components/StorefrontFoundation.css";
+import "./Orders.css";
+import axios from "axios";
+import { toast } from "react-toastify";
+import { ShopContext } from "../context/shopContext";
+import CustomerOrderCard from "../components/CustomerOrderCard";
+import { getOrderPresentation, orderFilters } from "../utils/orderPresentation";
 
 const Orders = () => {
-  const { backendUrl, token, currency, getProductsData } = useContext(ShopContext)
-  const [orders, setOrders] = useState([])
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('All Orders')
-  const [sort, setSort] = useState('newest')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [cancelOrder, setCancelOrder] = useState(null)
-  const [cancelling, setCancelling] = useState(false)
-  const cancellationDialog = useRef(null)
-  const mutationPending = useRef(false)
-  const requestId = useRef(0)
+  const { backendUrl, token, currency, getProductsData } =
+    useContext(ShopContext);
+  const [orders, setOrders] = useState([]);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("All Orders");
+  const [sort, setSort] = useState("newest");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refreshFeedback, setRefreshFeedback] = useState("");
+  const [cancelOrder, setCancelOrder] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancellationDialog = useRef(null);
+  const keepOrderButton = useRef(null);
+  const headingRef = useRef(null);
+  const mutationPending = useRef(false);
+  const requestId = useRef(0);
 
   const loadOrders = useCallback(async () => {
-    if (!token) return
-    const request = ++requestId.current
-    setLoading(true)
-    setError('')
+    if (!token) return;
+    const request = ++requestId.current;
+    setLoading(true);
+    setError("");
+    setRefreshFeedback("");
     try {
-      const { data } = await axios.post(backendUrl + '/api/order/userorders', {}, { headers: { token } })
-      if (request !== requestId.current) return
-      if (!data.success) throw new Error(data.message || 'Unable to load your orders.')
-      setOrders(data.orders)
+      const { data } = await axios.post(
+        backendUrl + "/api/order/userorders",
+        {},
+        { headers: { token } },
+      );
+      if (request !== requestId.current) return;
+      if (!data.success || !Array.isArray(data.orders))
+        throw new Error(data.message || "Unable to load your orders.");
+      setOrders(data.orders);
+      setRefreshFeedback("Orders updated.");
     } catch (error) {
-      if (request !== requestId.current) return
-      const message = error.response?.data?.message || error.message
-      setError(message)
-      toast.error(message)
+      if (request !== requestId.current) return;
+      const message = error.response?.data?.message || error.message;
+      setError(message);
+      toast.error(message);
     } finally {
-      if (request === requestId.current) setLoading(false)
+      if (request === requestId.current) setLoading(false);
     }
-  }, [backendUrl, token])
+  }, [backendUrl, token]);
 
   useEffect(() => {
-    loadOrders()
-    return () => { requestId.current += 1 }
-  }, [loadOrders])
+    loadOrders();
+    return () => {
+      requestId.current += 1;
+    };
+  }, [loadOrders]);
 
   useEffect(() => {
-    const dialog = cancellationDialog.current
-    if (cancelOrder && !dialog.open) dialog.showModal()
-    else if (!cancelOrder && dialog.open) dialog.close()
-  }, [cancelOrder])
+    if (!cancelOrder) return;
+    const dialog = cancellationDialog.current;
+    const previousFocus = document.activeElement;
+    const fallbackFocus = headingRef.current;
+    const previousOverflow = document.body.style.overflow;
+    if (!dialog.open) dialog.showModal();
+    document.body.style.overflow = "hidden";
+    keepOrderButton.current?.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (
+        previousFocus?.isConnected &&
+        !previousFocus.disabled &&
+        previousFocus.getClientRects().length
+      )
+        previousFocus.focus();
+      else fallbackFocus?.focus();
+    };
+  }, [cancelOrder]);
 
   const cancelHandler = async () => {
-    if (!cancelOrder || mutationPending.current) return
-    mutationPending.current = true
-    setCancelling(true)
-    requestId.current += 1
+    if (!cancelOrder || mutationPending.current) return;
+    mutationPending.current = true;
+    setCancelling(true);
+    requestId.current += 1;
     try {
-      const { data } = await axios.post(backendUrl + '/api/order/cancel', { orderId: cancelOrder._id }, { headers: { token } })
-      if (!data.success) throw new Error(data.message || 'Unable to cancel this order.')
-      setOrders(current => current.map(order => order._id === data.order._id ? { ...order, ...data.order } : order))
-      setCancelOrder(null)
-      toast.success(data.message || 'Order cancelled.')
-      await getProductsData()
+      const { data } = await axios.post(
+        backendUrl + "/api/order/cancel",
+        { orderId: cancelOrder._id },
+        { headers: { token } },
+      );
+      if (!data.success)
+        throw new Error(data.message || "Unable to cancel this order.");
+      setOrders((current) =>
+        current.map((order) =>
+          order._id === data.order._id ? { ...order, ...data.order } : order,
+        ),
+      );
+      setCancelOrder(null);
+      toast.success(data.message || "Order cancelled.");
+      await getProductsData();
     } catch (error) {
-      toast.error(error.response?.data?.message || error.message)
-      setCancelOrder(null)
-      await loadOrders()
+      toast.error(error.response?.data?.message || error.message);
+      setCancelOrder(null);
+      await loadOrders();
     } finally {
-      mutationPending.current = false
-      setCancelling(false)
-      setLoading(false)
+      mutationPending.current = false;
+      setCancelling(false);
+      setLoading(false);
     }
-  }
+  };
 
-  const search = query.trim().toLowerCase()
-  const visibleOrders = orders.filter(order => (filter === 'All Orders' || getOrderPresentation(order).group === filter)
-    && `${order._id} ${(order.items || []).map(item => item.name || '').join(' ')} ${order.receiptNumber || ''}`.toLowerCase().includes(search))
-    .sort((a, b) => (Number(a.date || 0) - Number(b.date || 0)) * (sort === 'oldest' ? 1 : -1))
+  const search = query.trim().toLowerCase();
+  const visibleOrders = orders
+    .filter(
+      (order) =>
+        (filter === "All Orders" ||
+          getOrderPresentation(order).group === filter) &&
+        `${order._id} ${(order.items || []).map((item) => item.name || "").join(" ")} ${order.receiptNumber || ""}`
+          .toLowerCase()
+          .includes(search),
+    )
+    .sort(
+      (a, b) =>
+        (Number(a.date || 0) - Number(b.date || 0)) *
+        (sort === "oldest" ? 1 : -1),
+    );
 
   return (
-    <section className='page-section min-w-0'>
-      <div className='mb-5 flex flex-wrap items-end justify-between gap-5'>
-        <div><p className='eyebrow mb-3'>YOUR SCHOOL ESSENTIALS</p><h1 className='border-l-4 border-amber-400 pl-3 text-2xl font-semibold tracking-tight sm:text-3xl'>MY ORDERS</h1><p className='mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400'>Review your orders and refresh to see their latest status.</p></div>
-        <div className='flex w-full flex-wrap items-center gap-2 md:w-auto'>
-          <label className='relative min-w-0 flex-1 basis-full md:w-56 md:basis-auto'><span className='sr-only'>Search your orders by order ID, product or receipt</span><svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' className='pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-500 dark:text-slate-400'><circle cx='10' cy='10' r='6'/><path d='m15 15 5 5'/></svg><input type='search' value={query} onChange={event => setQuery(event.target.value)} placeholder='Search your orders…' className='h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100'/></label>
-          <label><span className='sr-only'>Sort orders</span><select value={sort} onChange={event => setSort(event.target.value)} className='h-11 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200'><option value='newest'>Newest first</option><option value='oldest'>Oldest first</option></select></label>
-          <button type='button' onClick={loadOrders} disabled={loading || cancelling} aria-label='Refresh your orders' title='Refresh your orders' className='flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:bg-slate-800'><svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' className='h-4 w-4'><path d='M20 11a8 8 0 1 0-2 6M20 4v7h-7'/></svg></button>
+    <section className="orders-page">
+      <div className="orders-container">
+        <header className="orders-header">
+          <p className="orders-eyebrow">Your school essentials</p>
+          <h1 ref={headingRef} tabIndex={-1}>
+            My orders
+          </h1>
+          <p>
+            Review your orders, check their progress, and find payment details
+            when you need them.
+          </p>
+        </header>
+        <div className="orders-toolbar">
+          <label className="orders-search">
+            <span className="sr-only">
+              Search your orders by order ID, product or receipt
+            </span>
+            <Search size={18} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search orders, products or receipts..."
+            />
+          </label>
+          <label className="orders-sort">
+            <span className="sr-only">Sort orders</span>
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn-secondary orders-action orders-refresh"
+            onClick={loadOrders}
+            disabled={loading || cancelling}
+            aria-label="Refresh your orders"
+          >
+            Refresh <RefreshCw size={16} aria-hidden="true" />
+          </button>
         </div>
-      </div>
-      <div role='group' aria-label='Filter your orders' className='mb-4 flex gap-2 overflow-x-auto pb-2'>
-        {orderFilters.map(label => <button key={label} type='button' aria-pressed={filter === label} onClick={() => setFilter(label)} className={'inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs ' + (filter === label ? 'border-amber-400 bg-amber-400 font-semibold text-slate-950' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400 dark:hover:bg-slate-800')}><span>{label}</span><span className={'rounded px-1.5 py-0.5 text-[10px] ' + (filter === label ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300')}>{label === 'All Orders' ? orders.length : orders.filter(order => getOrderPresentation(order).group === label).length}</span></button>)}
-      </div>
-      {error && <div role='alert' className='mb-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300'><p>We could not refresh your orders. Please try again.</p><button type='button' onClick={loadOrders} disabled={loading} className='mt-2 min-h-11 font-semibold underline underline-offset-4'>Try again</button></div>}
-      {loading ? <p role='status' className='rounded-xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400'>Loading your orders…</p> : visibleOrders.length ? <div className='space-y-4'>{visibleOrders.map(order => <CustomerOrderCard key={order._id} order={order} currency={currency} onCancel={setCancelOrder} cancellationPending={cancelling}/>)}</div> : !error && <div className='rounded-xl border border-slate-200 bg-white px-5 py-12 text-center dark:border-slate-800 dark:bg-slate-900/60'><h2 className='text-lg font-semibold'>{orders.length ? 'No matching orders' : 'No orders yet'}</h2><p className='mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400'>{orders.length ? 'Try a different search or status filter.' : 'Your school essentials will appear here after you place an order.'}</p>{orders.length ? <button type='button' onClick={() => { setQuery(''); setFilter('All Orders') }} className='btn-secondary mt-5'>Clear filters</button> : <Link to='/collection' className='btn-secondary mt-5'>Browse Collection</Link>}</div>}
-      <dialog ref={cancellationDialog} aria-labelledby='cancel-order-heading' aria-describedby='cancel-order-description' onCancel={event => { event.preventDefault(); if (!mutationPending.current) setCancelOrder(null) }} className='w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-lg backdrop:bg-slate-950/50 sm:p-6 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'>
-        <h2 id='cancel-order-heading' className='text-lg font-semibold'>Cancel order?</h2>
-        <p id='cancel-order-description' className='mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300'>Are you sure you want to cancel this order? This action cannot be undone.</p>
-        {cancelOrder?.payment === true && <p className='mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400'>Cancelling this order does not issue a payment refund.</p>}
-        <div className='mt-5 flex flex-col gap-3 min-[375px]:flex-row'>
-          <button type='button' disabled={cancelling} onClick={() => setCancelOrder(null)} className='min-h-11 flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-800'>Keep Order</button>
-          <button type='button' disabled={cancelling} onClick={cancelHandler} className='min-h-11 flex-1 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10'>{cancelling ? 'Cancelling…' : 'Cancel Order'}</button>
+        <div
+          className="orders-filters"
+          role="group"
+          aria-label="Filter your orders"
+        >
+          {orderFilters.map((label) => (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={filter === label}
+              onClick={() => setFilter(label)}
+            >
+              <span>{label}</span>
+              <span className="orders-filter-count">
+                {label === "All Orders"
+                  ? orders.length
+                  : orders.filter(
+                      (order) => getOrderPresentation(order).group === label,
+                    ).length}
+              </span>
+            </button>
+          ))}
         </div>
-      </dialog>
+        <div className="orders-results">
+          <p>
+            {visibleOrders.length}{" "}
+            {visibleOrders.length === 1 ? "order" : "orders"} · Showing{" "}
+            {sort === "oldest" ? "oldest" : "newest"} first
+          </p>
+          <p role="status">
+            {loading && orders.length
+              ? "Refreshing your orders..."
+              : !loading
+                ? refreshFeedback
+                : ""}
+          </p>
+        </div>
+        {error && (
+          <div role="alert" className="orders-request-error">
+            <p>
+              We could not load your orders.{" "}
+              {orders.length
+                ? "Your previously loaded orders remain available."
+                : "Please try again."}
+            </p>
+            <button
+              type="button"
+              className="btn-secondary orders-action"
+              onClick={loadOrders}
+              disabled={loading || cancelling}
+            >
+              Try again
+            </button>
+          </div>
+        )}
+        {loading && !orders.length ? (
+          <div className="orders-empty" role="status">
+            Loading your orders...
+          </div>
+        ) : visibleOrders.length ? (
+          <div className="orders-list">
+            {visibleOrders.map((order) => (
+              <CustomerOrderCard
+                key={order._id}
+                order={order}
+                currency={currency}
+                onCancel={setCancelOrder}
+                cancellationPending={cancelling}
+              />
+            ))}
+          </div>
+        ) : (
+          !error && (
+            <div className="orders-empty">
+              <ShoppingBag size={36} strokeWidth={1.75} aria-hidden="true" />
+              <h2>{orders.length ? "No matching orders" : "No orders yet"}</h2>
+              <p>
+                {orders.length
+                  ? "Try a different search or status filter."
+                  : "Your school essentials will appear here after you place an order."}
+              </p>
+              {orders.length ? (
+                <button
+                  type="button"
+                  className="btn-secondary orders-action"
+                  onClick={() => {
+                    setQuery("");
+                    setFilter("All Orders");
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : (
+                <Link
+                  to="/collection"
+                  className="btn-primary orders-action orders-brand-action"
+                >
+                  Browse Collection
+                </Link>
+              )}
+            </div>
+          )
+        )}
+        <dialog
+          ref={cancellationDialog}
+          className="orders-cancel-dialog"
+          aria-labelledby="cancel-order-heading"
+          aria-describedby="cancel-order-description"
+          aria-busy={cancelling}
+          onCancel={(event) => {
+            event.preventDefault();
+            if (!mutationPending.current) setCancelOrder(null);
+          }}
+        >
+          <h2 id="cancel-order-heading">Cancel order?</h2>
+          <p id="cancel-order-description">
+            Are you sure you want to cancel this order? This action cannot be
+            undone.
+          </p>
+          {cancelOrder?.payment === true && (
+            <p>Cancelling this paid order records a refund obligation. It does not issue a refund. Contact PAMO to arrange the refund.</p>
+          )}
+          <div>
+            <button
+              ref={keepOrderButton}
+              type="button"
+              className="btn-secondary orders-action"
+              disabled={cancelling}
+              onClick={() => setCancelOrder(null)}
+            >
+              Keep Order
+            </button>
+            <button
+              type="button"
+              className="btn-secondary orders-action orders-danger"
+              disabled={cancelling}
+              onClick={cancelHandler}
+            >
+              {cancelling ? "Cancelling..." : "Cancel Order"}
+            </button>
+          </div>
+        </dialog>
+      </div>
     </section>
-  )
-}
+  );
+};
 
-export default Orders
+export default Orders;

@@ -1,6 +1,9 @@
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
+import { issueAuthToken } from '../utils/authTokens.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { getAllowedOrderStatuses } from '../utils/orderStatus.js';
 import orderModel from '../models/orderModel.js';
 import adminAuth from '../middleware/adminAuth.js';
@@ -41,10 +44,12 @@ test('valid transitions persist status and the cashier handoff timestamp', async
     ];
     for (const [status, payment, next] of cases) {
         await t.test(`${status} → ${next} (paid=${payment})`, async t => {
-            let stored = { _id: orderId, status, payment, amount: 235 };
+            let stored = { _id: orderId, status, payment, paymentMethod: 'COD', amount: 235 };
+            t.mock.method(mongoose.connection, 'transaction', async callback => callback({}));
+            t.mock.method(orderModel, 'findOne', () => ({ session() { return this; }, lean: async () => ({ ...stored }) }));
             t.mock.method(orderModel, 'findById', async () => document(stored));
             t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update, options) => {
-                assert.deepEqual(filter, { _id: orderId, status, payment });
+                assert.deepEqual(filter, { _id: orderId, status, payment, ...(next === 'Cancelled' ? { inventoryStatus: { $exists: false } } : {}) });
                 if (next === 'Sent to Cashier') {
                     assert.equal(typeof update.$set.sentToCashierAt, 'number');
                     assert.deepEqual(Object.keys(update.$set).sort(), ['sentToCashierAt', 'status']);
@@ -52,7 +57,7 @@ test('valid transitions persist status and the cashier handoff timestamp', async
                 } else {
                     assert.deepEqual(update, { $set: { status: next, ...(next === 'Cancelled' ? { cancellationSource: 'admin' } : {}) } });
                 }
-                assert.deepEqual(options, { new: true });
+                assert.deepEqual(options, next === 'Cancelled' ? { session: {}, returnDocument: 'after', runValidators: true } : { new: true });
                 stored = { ...stored, ...update.$set };
                 return document(stored);
             });
@@ -122,7 +127,7 @@ test('admin list and mutations retain the existing server authorization', async 
         assert.equal(res.body.success, false);
     }
     let allowed = false;
-    const token = jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET);
+    const token = issueAuthToken(ADMIN_SUBJECT, 'admin');
     await adminAuth({ headers: { token } }, response(), () => { allowed = true; });
     assert.equal(allowed, true);
 });

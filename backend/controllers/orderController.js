@@ -1,18 +1,14 @@
 import orderModel from "../models/orderModel.js";
-import userModel from "../models/userModel.js";
-import Stripe from 'stripe'
-import paypal from '@paypal/checkout-server-sdk';
+import { prepareCheckoutCart, clearCheckoutCart } from '../utils/checkoutCart.js';
 import { getAllowedOrderStatuses } from '../utils/orderStatus.js';
 import { createReservedOrder, cancelReservedOrder } from '../utils/inventory.js';
+import { validateOrderAddress } from '../utils/orderAddress.js';
+import { refundPresentation } from '../../shared/refund.js';
 
 
 // Global variables
 const currency = 'php'
-const paypalCurrency = 'USD'
-const deliveryCharge = 10
 
-// gateway initialize
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 
 // Placing Orders Using COD method
@@ -20,13 +16,15 @@ const placeOrder = async (req, res) => {
 
     try {
 
-        const { userId, items, amount, address, requestId } = req.body;
+        const { userId, items, amount, address, requestId, checkoutCart } = req.body;
+        const validatedAddress = validateOrderAddress(address);
 
         const orderData = {
             userId,
             requestId,
+            checkoutCart: prepareCheckoutCart(checkoutCart, items),
             items,
-            address,
+            address: validatedAddress,
             amount,
             paymentMethod: "COD",
             paymentCurrency: currency.toUpperCase(),
@@ -36,206 +34,46 @@ const placeOrder = async (req, res) => {
 
         const newOrder = await createReservedOrder(orderData)
 
-        await userModel.findByIdAndUpdate(userId, { cartData: {} })
-
-        res.json({ success: true, message: "Order Placed Successfully", orderId: newOrder._id })
-
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
- 
-}
-
-// Placing Orders Using Stripe method
-const placeOrderStripe = async (req, res) => {
-    try {
-
-        const { userId, items, amount, address, requestId } = req.body;
-        const { origin } = req.headers;
-
-        const orderData = {
-            userId,
-            requestId,
-            items,
-            address,
-            amount,
-            paymentMethod: "Stripe",
-            paymentCurrency: currency.toUpperCase(),
-            payment: false,
-            date: Date.now()
+        let cartCleanupPending = false;
+        try {
+            await clearCheckoutCart(newOrder, userId);
+        } catch {
+            // The order/reservation already committed. Do not report it as failed
+            // or erase data to recover; replaying its original request can retry cleanup.
+            cartCleanupPending = true;
         }
 
-        const newOrder = await createReservedOrder(orderData)
-
-        const line_items = newOrder.items.map((item) => ({
-            price_data: {
-                currency:currency,
-                product_data: {
-                    name:item.name
-                },
-                unit_amount: item.price * 100
-            },
-            quantity: item.quantity
-        }))
-        
-        line_items.push({
-            price_data: {
-                currency:currency,
-                product_data: {
-                    name:'Delivery charges'
-                },
-                unit_amount: deliveryCharge * 100
-            },
-            quantity: 1
-        })
-
-        const session = await stripe.checkout.sessions.create({
-            success_url: `${origin}/verify?success=true&orderId=${newOrder._id}&method=stripe`,
-            cancel_url: `${origin}/verify?success=false&orderId=${newOrder._id}&method=stripe`,
-            line_items,
-            mode: 'payment',
-        }, { idempotencyKey: String(newOrder._id) })
-
-        res.json({success:true,session_url:session.url});
+        res.json({ success: true, message: "Order Placed Successfully", orderId: newOrder._id, cartCleanupPending })
 
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        if (error?.code === 'INVALID_ORDER_ADDRESS') {
+            return res.status(error.status).json({ success: false, message: error.message });
+        }
+        res.json({ success: false, message: 'Unable to place your order. Review your items and try again.' })
     }
 
 }
 
-// Verify Stripe
-const verifyStripe = async(req,res) => {
-    const {orderId, success, userId} = req.body
-    if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId) || typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' })
-    
-    try {
-        if (success === "true") {
-            // First local confirmation time, not provider settlement time; retries preserve history.
-            const order = await orderModel.findOneAndUpdate({ _id: orderId, userId, paymentMethod: 'Stripe', status: { $ne: 'Cancelled' }, inventoryStatus: { $ne: 'released' } }, [
-                { $set: { payment: true, paidAt: { $cond: [
-                    { $eq: ['$payment', true] }, '$paidAt', { $ifNull: ['$paidAt', Date.now()] }
-                ] } } }
-            ], { updatePipeline: true })
-            if (!order) return res.json({ success: false, message: 'This order is unavailable or cancelled.' })
-            await userModel.findByIdAndUpdate(userId, {cartData: {}})
-            res.json({success:true});
-        } else {
-            await cancelReservedOrder(orderId, { userId, paymentMethod: 'Stripe', unpaidOnly: true })
-            res.json({success:false})
-        }
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-}
+// SR-1: fail closed until provider-authoritative verification is implemented.
+// Reject before any order, inventory, cart, or provider operation; never cancel
+// an existing attempt merely because its browser reports success or failure.
+const onlinePaymentUnavailable = (_req, res) => res.status(503).json({
+    success: false,
+    message: 'Online payments are temporarily unavailable. Please use Pay as you claim. If you already paid online, contact PAMO for review.'
+});
 
-// paypal payment
-const placeOrderPaypal = async (req, res) => {
-
-    try {
-
-        const { userId, items, amount, address, requestId } = req.body;
-        const { origin } = req.headers;
-
-        const orderData = {
-            userId,
-            requestId,
-            items,
-            address,
-            amount,
-            paymentMethod: "PayPal",
-            paymentCurrency: paypalCurrency,
-            payment: false,
-            date: Date.now()
-        }
-
-        const newOrder = await createReservedOrder(orderData)
-
-        const total = newOrder.items.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0
-        ) + deliveryCharge;
-
-        const environment = new paypal.core.SandboxEnvironment(
-            process.env.PAYPAL_CLIENT_ID,
-            process.env.PAYPAL_SECRET
-        );
-
-        const client = new paypal.core.PayPalHttpClient(environment);
-
-        // ✅ Create PayPal order
-        const request = new paypal.orders.OrdersCreateRequest();
-        request.headers['PayPal-Request-Id'] = String(newOrder._id);
-
-        request.requestBody({
-            intent: "CAPTURE",
-            purchase_units: [
-                {
-                    amount: {
-                        currency_code: paypalCurrency,
-                        value: total.toFixed(2),
-                    },
-                },
-            ],
-            application_context: {
-                return_url: `${origin}/verify?success=true&orderId=${newOrder._id}&method=paypal`,
-                cancel_url: `${origin}/verify?success=false&orderId=${newOrder._id}&method=paypal`,
-            },
-        });
-
-        const response = await client.execute(request);
-
-        // ✅ Get approval link
-        const approvalUrl = response.result.links.find(
-            (link) => link.rel === "approve"
-        ).href;
-
-        res.json({ success: true, url: approvalUrl });
-
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
-};
-
-// Verify PayPal
-const verifyPaypal = async (req, res) => {
-    const { orderId, success, userId } = req.body;
-    if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId) || typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' });
-
-    try {
-        if (success === "true") {
-            // First local confirmation time, not provider settlement time; retries preserve history.
-            const order = await orderModel.findOneAndUpdate({ _id: orderId, userId, paymentMethod: 'PayPal', status: { $ne: 'Cancelled' }, inventoryStatus: { $ne: 'released' } }, [
-                { $set: { payment: true, paidAt: { $cond: [
-                    { $eq: ['$payment', true] }, '$paidAt', { $ifNull: ['$paidAt', Date.now()] }
-                ] } } }
-            ], { updatePipeline: true });
-            if (!order) return res.json({ success: false, message: 'This order is unavailable or cancelled.' });
-            await userModel.findByIdAndUpdate(userId, { cartData: {} });
-            res.json({ success: true });
-        } else {
-            await cancelReservedOrder(orderId, { userId, paymentMethod: 'PayPal', unpaidOnly: true });
-            res.json({ success: false });
-        }
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
-};
-
+const placeOrderStripe = onlinePaymentUnavailable;
+const placeOrderPaypal = onlinePaymentUnavailable;
+const verifyStripe = onlinePaymentUnavailable;
+const verifyPaypal = onlinePaymentUnavailable;
 
 // All Orders Data For Admin Panel
 const allOrders = async (req, res) => {
     try {
         const orders = await orderModel.find({})
-        res.json({ success: true, orders: orders.map(order => ({ ...order.toObject(), allowedStatuses: getAllowedOrderStatuses(order) })) })
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        res.json({ success: true, orders: orders.map(order => ({ ...order.toObject(), refundSummary: refundPresentation(order), allowedStatuses: getAllowedOrderStatuses(order) })) })
+    } catch {
+        res.json({ success: false, message: 'Unable to load orders. Please try again.' })
     }
 }
 
@@ -246,11 +84,14 @@ const userOrders = async (req, res) => {
         if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId)) {
             return res.status(401).json({ success: false, message: 'Sign in to view your orders.' })
         }
-        const orders = await orderModel.find({ userId }).select('_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource')
-        res.json({ success: true, orders })
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        const orders = await orderModel.find({ userId }).select('_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource refund paymentCurrency confirmedBy stripePayment paypalPayment paymentRecovery').lean()
+        // Use internal evidence for classification without disclosing staff or provider metadata.
+        res.json({ success: true, orders: orders.map(order => {
+            const { confirmedBy, stripePayment, paypalPayment, paymentRecovery, ...publicOrder } = order
+            return { ...publicOrder, refundSummary: refundPresentation(order) }
+        }) })
+    } catch {
+        res.json({ success: false, message: 'Unable to load your orders. Please try again.' })
     }
 }
 
@@ -261,7 +102,8 @@ const cancelCustomerOrder = async (req, res) => {
     if (typeof orderId !== 'string' || !/^[a-f\d]{24}$/i.test(orderId)) return res.status(400).json({ success: false, message: 'Invalid order.' })
     try {
         const order = await cancelReservedOrder(orderId, { userId, source: 'customer' })
-        res.json({ success: true, message: 'Order cancelled.', order: { _id: order._id, status: order.status, cancellationSource: order.cancellationSource } })
+        const refundSummary = refundPresentation(order)
+        res.json({ success: true, message: refundSummary?.status === 'Refund Required' ? 'Order cancelled. Refund requires PAMO review; no refund has been issued.' : 'Order cancelled.', order: { _id: order._id, status: order.status, cancellationSource: order.cancellationSource, refund: order.refund, refundSummary } })
     } catch (error) {
         res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Unable to cancel this order. Refresh your orders and try again.' })
     }
@@ -279,12 +121,12 @@ const updateStatus = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Order not found.' })
         }
         if (status === 'Cancelled' && currentOrder.status === 'Cancelled') {
-            return res.json({ success: true, message: 'Order already cancelled', order: { ...currentOrder.toObject(), allowedStatuses: [] } })
+            return res.json({ success: true, message: 'Order already cancelled', order: { ...currentOrder.toObject(), refundSummary: refundPresentation(currentOrder), allowedStatuses: [] } })
         }
         if (!getAllowedOrderStatuses(currentOrder).includes(status)) {
             return res.status(409).json({ success: false, message: 'This action is not available for the current order and payment status. Refresh orders and try again.' })
         }
-        const order = status === 'Cancelled' && currentOrder.inventoryStatus === 'reserved'
+        const order = status === 'Cancelled'
             ? await cancelReservedOrder(orderId, { expectedStatus: currentOrder.status, expectedPayment: currentOrder.payment, source: 'admin' })
             : await orderModel.findOneAndUpdate(
             { _id: orderId, status: currentOrder.status, payment: currentOrder.payment },
@@ -294,10 +136,10 @@ const updateStatus = async (req, res) => {
         if (!order) {
             return res.status(409).json({ success: false, message: 'The order changed. Refresh orders and try again.' })
         }
-        res.json({ success: true, message: 'Status Updated', order: { ...order.toObject(), allowedStatuses: getAllowedOrderStatuses(order) } })
+        res.json({ success: true, message: 'Status Updated', order: { ...order.toObject(), refundSummary: refundPresentation(order), allowedStatuses: getAllowedOrderStatuses(order) } })
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        if (error.status === 409) return res.status(409).json({ success: false, message: error.message })
+        res.json({ success: false, message: 'Unable to update this order. Refresh and try again.' })
     }
 }
 

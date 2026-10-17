@@ -1,0 +1,125 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply m-0 bg-slate-50 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-100;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply text-slate-900 dark:text-slate-100;
+  }
+  body,
+  :where(
+    header,
+    main,
+    footer,
+    section,
+    aside,
+    article,
+    div,
+    h1,
+    h2,
+    h3,
+    p,
+    span,
+    a,
+    button,
+    label,
+    input,
+    select,
+    fieldset,
+    svg
+  ) {
+    transition-property:
+      background-color, color, border-color, fill, stroke, box-shadow;
+    transition-duration: 250ms;
+    transition-timing-function: ease;
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-4 outline-amber-600;
+  }
+  input,
+  select {
+    @apply min-w-0;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    @apply accent-slate-900 dark:accent-amber-400;
+  }
+  ::selection {
+    @apply bg-amber-200 text-slate-900;
+  }
+}
+
+@layer components {
+  .content-container {
+    @apply mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-10 xl:px-12;
+  }
+  .page-section {
+    @apply py-8 sm:py-12 lg:py-14;
+  }
+  .panel {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition-colors duration-[250ms] hover:bg-slate-700 active:bg-slate-950 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-200 dark:active:bg-slate-300;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition-colors duration-[250ms] hover:border-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500 dark:hover:bg-slate-800;
+  }
+  .icon-button {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors duration-[250ms] hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800;
+  }
+  .theme-icon {
+    @apply transition-[filter] duration-[250ms] dark:invert;
+  }
+  .field {
+    @apply min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-amber-400 dark:focus:ring-amber-400/20;
+  }
+  .field-label {
+    @apply mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400;
+  }
+  .product-grid {
+    @apply grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5;
+  }
+}
+
+.dark {
+  --toastify-color-dark: #0f172a;
+  --toastify-text-color-dark: #f1f5f9;
+}
+
+.dark input:-webkit-autofill {
+  -webkit-text-fill-color: #f1f5f9;
+  caret-color: #f1f5f9;
+  -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

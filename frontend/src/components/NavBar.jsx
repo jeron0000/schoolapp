@@ -1,8 +1,10 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
 import { assets } from '../assets/assets'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { ShopContext } from '../context/shopContext';
 import ThemeToggle from './ThemeToggle';
+import './StorefrontFoundation.css';
+import { Menu, Search, ShoppingBag, UserRound, X } from 'lucide-react';
 
 
 const NavBar = () => {
@@ -12,8 +14,23 @@ const NavBar = () => {
   const mobilePanel = useRef(null);
   const menuButton = useRef(null);
   const accountMenu = useRef(null);
+  const location = useLocation();
+  const [, setSearchParams] = useSearchParams();
 
   const {search, setSearch, setShowSearch, getCartCount, navigate, token, setToken, setCartItems} = useContext(ShopContext);
+  const revealSearch = () => {
+    setShowSearch(true);
+    if (location.pathname !== '/collection') navigate('/collection');
+  };
+  const changeSearch = event => {
+    const value = event.target.value;
+    setSearch(value);
+    if (location.pathname === '/collection') setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set('q', value);
+      return next;
+    }, { replace: true });
+  };
   const restrictedLinkProps = token ? {} : {
     inert: true,
     'aria-disabled': true,
@@ -29,7 +46,8 @@ const NavBar = () => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') setVisible(false);
       if (event.key !== 'Tab') return;
-      const controls = mobilePanel.current?.querySelectorAll('a:not([aria-disabled="true"]), button:not(:disabled)');
+      const controls = Array.from(mobilePanel.current?.querySelectorAll('a:not([aria-disabled="true"]), button:not(:disabled)') || [])
+        .filter(control => control.getClientRects().length > 0);
       if (!controls?.length) return;
       const first = controls[0];
       const last = controls[controls.length - 1];
@@ -39,7 +57,7 @@ const NavBar = () => {
         event.preventDefault(); first.focus();
       }
     };
-    const onResize = () => { if (window.innerWidth >= 1024) setVisible(false); };
+    const onResize = () => { if (window.innerWidth >= 768) setVisible(false); };
     document.addEventListener('keydown', onKeyDown);
     window.addEventListener('resize', onResize);
     return () => {
@@ -61,7 +79,6 @@ const NavBar = () => {
 
   const logout = () => {
     navigate('/login')
-    localStorage.removeItem('token');
     setToken('')
     setCartItems({})
     
@@ -71,31 +88,31 @@ const NavBar = () => {
 
   return (
 
-    <header className='relative z-30 bg-slate-50 px-4 py-3 sm:px-6 lg:px-8 lg:py-4 2xl:px-12 dark:bg-slate-950'>
+    <header className={'storefront-navbar relative z-30' + (location.pathname === '/' ? ' storefront-home' : location.pathname === '/collection' ? ' storefront-collection' : location.pathname === '/about' ? ' storefront-about' : location.pathname === '/contact' ? ' storefront-contact' : location.pathname.startsWith('/product/') ? ' storefront-product' : location.pathname === '/cart' ? ' storefront-cart' : location.pathname === '/place-order' ? ' storefront-checkout' : location.pathname === '/orders' ? ' storefront-orders' : '')}>
       <a href='#main-content' className='sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:p-3 dark:focus:bg-slate-900'>Skip to content</a>
-      <div className='mx-auto flex h-16 w-full max-w-[1800px] items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 shadow-sm sm:h-20 sm:px-5 lg:gap-7 xl:gap-9 xl:px-6 2xl:gap-11 dark:border-slate-800 dark:bg-slate-900/60'>
-        <Link to='/' {...restrictedLinkProps} className='flex shrink-0 items-center gap-2 rounded-lg' aria-label='PAMO home'>
-          <img src={assets.logo} className='h-8 w-8 rounded-lg object-contain sm:h-12 sm:w-12' alt='' />
-          <span className='text-sm font-bold tracking-tight text-slate-900 min-[375px]:text-base sm:text-xl dark:text-slate-100'>PAMO</span>
-          <span className='ml-1 hidden border-l border-slate-200 pl-3 text-xs font-medium leading-5 text-slate-500 xl:block dark:border-slate-700 dark:text-slate-400'>School essentials<br/>SmartStock</span>
+      <div className='storefront-navbar-shell'>
+        <Link to='/' {...restrictedLinkProps} className='storefront-brand' aria-label='PAMO home'>
+          <img src={assets.logo} className='storefront-logo' alt='' />
+          <span className='storefront-brand-name'>PAMO<small className='storefront-brand-mobile-tagline'>SmartStock</small></span>
+          <span className='storefront-brand-description'>School essentials<br/>SmartStock</span>
         </Link>
-        <nav aria-label='Main navigation' className='hidden shrink-0 items-center gap-1 lg:flex lg:gap-3 xl:gap-4 2xl:gap-5'>
+        <nav aria-label='Main navigation' className='storefront-main-nav'>
           {[['/', 'Home'], ['/collection', 'Collection'], ['/about', 'About'], ['/contact', 'Contact']].map(([path, label]) => (
-            <NavLink key={path} to={path} {...restrictedLinkProps} className={({isActive}) => 'relative rounded-xl px-3 py-3 text-sm transition-colors duration-[250ms] xl:px-4 ' + (isActive ? 'bg-amber-50 font-semibold text-amber-800 after:absolute after:inset-x-3 after:-bottom-2 after:h-0.5 after:bg-amber-500 dark:bg-amber-400/10 dark:text-amber-300 dark:after:bg-amber-400' : 'font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100')}>{label}</NavLink>
+            <NavLink key={path} to={path} {...restrictedLinkProps} className={({isActive}) => 'storefront-nav-link' + (isActive ? ' is-active' : '')}>{label}</NavLink>
           ))}
         </nav>
-        <div className='flex min-w-0 items-center gap-0 sm:gap-1 lg:gap-3 xl:gap-4 2xl:gap-5'>
-          <div className='hidden min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 lg:flex lg:w-40 xl:w-48 2xl:w-64 dark:border-slate-700 dark:bg-slate-950/40 dark:focus-within:border-blue-400'>
-            <img src={assets.search_icon} className='theme-icon w-4 shrink-0' alt='' />
-            <input type='search' value={search} disabled={!token} onFocus={()=>{setShowSearch(true); navigate('/collection')}} onChange={(event)=>setSearch(event.target.value)} placeholder='Search school essentials…' aria-label='Search collection' className='h-11 w-full min-w-0 bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-400' />
+        <div className='storefront-nav-actions'>
+          <div className='storefront-nav-search'>
+            <Search size={18} strokeWidth={1.75} className='shrink-0 text-slate-600 dark:text-slate-300' aria-hidden='true' />
+            <input type='search' value={search} disabled={!token} onFocus={revealSearch} onChange={changeSearch} placeholder='Search school essentials…' aria-label='Search collection' className='storefront-nav-query' />
           </div>
-          <button type='button' disabled={!token} onClick={()=>{setShowSearch(true); navigate('/collection')}} className='icon-button h-10 w-10 sm:h-11 sm:w-11 lg:hidden' aria-label='Search collection'>
-            <img src={assets.search_icon} className='w-[18px] theme-icon' alt='' />
+          <button type='button' disabled={!token} onClick={()=>{revealSearch(); if (location.pathname === '/collection') document.getElementById('collection-search')?.focus()}} className='storefront-nav-icon storefront-search-trigger' aria-label='Search collection'>
+            <Search size={20} strokeWidth={1.75} aria-hidden='true' />
           </button>
-          <ThemeToggle className='hidden sm:flex'/>
+          <ThemeToggle className='storefront-nav-theme'/>
           <div ref={accountMenu} className='relative' onBlur={(event)=>{if (!event.currentTarget.contains(event.relatedTarget)) setAccountOpen(false)}}>
-            <button type='button' disabled={!token} onClick={()=> token ? setAccountOpen(!accountOpen) : navigate('/login')} className='icon-button h-10 w-10 sm:h-11 sm:w-11' aria-label='Account' aria-expanded={token ? accountOpen : undefined}>
-              <img className='w-[18px] theme-icon' src={assets.profile_icon} alt='' />
+            <button type='button' disabled={!token} onClick={()=> token ? setAccountOpen(!accountOpen) : navigate('/login')} className='storefront-nav-icon storefront-account-trigger' aria-label='Account' aria-expanded={token ? accountOpen : undefined}>
+              <UserRound size={20} strokeWidth={1.75} aria-hidden='true' />
             </button>
             {token && accountOpen && <div className='absolute right-0 top-full z-40 w-48 pt-2' onKeyDown={(e)=>{if(e.key === 'Escape') {setAccountOpen(false); accountMenu.current?.querySelector('button')?.focus()}}}>
               <div className='panel overflow-hidden p-2 text-sm'>
@@ -105,22 +122,22 @@ const NavBar = () => {
               </div>
             </div>}
           </div>
-          <Link to='/cart' {...restrictedLinkProps} className='icon-button relative h-10 w-10 sm:h-11 sm:w-11' aria-label={'Cart, ' + getCartCount() + ' items'}>
-            <img src={assets.cart_icon} className='w-[18px] theme-icon' alt='' />
+          <Link to='/cart' {...restrictedLinkProps} className='storefront-nav-icon storefront-cart-link relative' aria-label={'Cart, ' + getCartCount() + ' items'}>
+            <ShoppingBag size={20} strokeWidth={1.75} aria-hidden='true' />
             <span className='absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-slate-900 ring-2 ring-white dark:ring-slate-900'>{getCartCount()}</span>
           </Link>
-          <button ref={menuButton} type='button' onClick={()=>setVisible(true)} className='icon-button h-10 w-10 sm:h-11 sm:w-11 lg:hidden' aria-label='Open navigation' aria-expanded={visible} aria-controls='mobile-navigation'>
-            <img src={assets.menu_icon} className='w-[18px] theme-icon' alt='' />
+          <button ref={menuButton} type='button' onClick={()=>setVisible(true)} className='storefront-nav-icon storefront-menu-trigger' aria-label='Open navigation' aria-expanded={visible} aria-controls='mobile-navigation'>
+            <Menu size={20} strokeWidth={1.75} aria-hidden='true' />
           </button>
         </div>
       </div>
-      {visible && <div className='fixed inset-0 z-50 bg-slate-950/40 lg:hidden' role='dialog' aria-modal='true' aria-label='Navigation'>
+      {visible && <div className='fixed inset-0 z-50 bg-slate-950/40 md:hidden' role='dialog' aria-modal='true' aria-label='Navigation'>
         <button type='button' className='absolute inset-0 h-full w-full' aria-label='Close navigation' onClick={()=>setVisible(false)} />
         <nav ref={mobilePanel} id='mobile-navigation' aria-label='Mobile navigation' className='absolute inset-y-0 right-0 flex w-[85%] max-w-sm flex-col overflow-y-auto bg-white p-5 shadow-xl dark:bg-slate-900'>
           <div className='mb-8 flex items-center justify-between'>
             <span className='text-xl font-bold tracking-tight'>PAMO</span>
             <ThemeToggle className='sm:hidden'/>
-            <button autoFocus type='button' onClick={()=>setVisible(false)} className='icon-button' aria-label='Close navigation'><img src={assets.cross_icon} className='w-4 theme-icon' alt='' /></button>
+            <button autoFocus type='button' onClick={()=>setVisible(false)} className='icon-button' aria-label='Close navigation'><X size={20} strokeWidth={1.75} aria-hidden='true' /></button>
           </div>
           <p className='eyebrow mb-4'>Your campus essentials</p>
           {[['/', 'Home'], ['/collection', 'Collection'], ['/about', 'About'], ['/contact', 'Contact']].map(([path, label]) => (

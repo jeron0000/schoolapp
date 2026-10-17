@@ -1,0 +1,197 @@
+.hero-carousel-image {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.hero-carousel-incoming {
+  animation: hero-carousel-enter 400ms ease-out both;
+}
+
+.hero-carousel-outgoing {
+  animation: hero-carousel-exit 400ms ease-out both;
+}
+
+@keyframes hero-carousel-enter {
+  from { transform: translateX(calc(var(--hero-direction) * 100%)); }
+  to { transform: translateX(0); }
+}
+
+@keyframes hero-carousel-exit {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(var(--hero-direction) * -100%)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-carousel-incoming,
+  .hero-carousel-outgoing { animation: none; }
+}
+
+.hero-carousel-button {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #64748b;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+}
+
+.hero-carousel-button:hover {
+  background: #1e293b;
+}
+
+.hero-carousel-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #0f172a;
+}
+
+.hero-carousel-arrow {
+  display: none;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+.hero-carousel-previous {
+  /* Clear the Home V3 diagonal and keep the arrow focus ring inside the photo. */
+  left: calc(8% + 1rem);
+}
+
+.hero-carousel-next {
+  right: 1rem;
+}
+
+.hero-carousel-pagination-layout {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  bottom: 2px;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  transform: translateX(-50%);
+}
+
+.hero-carousel-pagination {
+  position: relative;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  touch-action: pan-x pinch-zoom;
+}
+
+.hero-carousel-pagination::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-carousel-rotation {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  min-height: 44px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transform: translateX(-50%);
+}
+
+.hero-carousel-rotation:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 4px #0f172a;
+}
+
+.hero-carousel-rotation-label {
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #0f172a;
+  color: #fff;
+}
+
+@media (min-width: 480px) {
+  .hero-carousel-pagination-with-rotation {
+    /* Equal side reservations keep the dots centered independently of the text. */
+    max-width: calc(100% - 12rem);
+  }
+
+  .hero-carousel-rotation {
+    top: 50%;
+    bottom: auto;
+    left: calc(100% + 0.5rem);
+    transform: translateY(-50%);
+  }
+}
+
+.hero-carousel-dot-button {
+  display: flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.hero-carousel-dot-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 4px #0f172a;
+}
+
+.hero-carousel-dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid #0f172a;
+  border-radius: 50%;
+  background: #e2e8f0;
+  box-shadow: 0 0 0 1px #fff;
+}
+
+.hero-carousel-dot-button[aria-current='true'] .hero-carousel-dot {
+  width: 9px;
+  height: 9px;
+  background: #fbbf24;
+}
+
+@media (min-width: 1025px) {
+  .hero-carousel-pagination-layout {
+    bottom: 6px;
+  }
+}
+
+@media (min-width: 1025px) and (hover: hover) and (pointer: fine) {
+  .hero-carousel-arrow {
+    display: flex;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+
+  .hero-carousel:hover .hero-carousel-arrow,
+  .hero-carousel:focus-within .hero-carousel-arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-carousel-arrow {
+    transition: none;
+  }
+}

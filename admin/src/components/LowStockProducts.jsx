@@ -1,11 +1,10 @@
-import { assets } from '../assets/assets'
 import { getStockLabel } from '../../../shared/inventory'
+import { ChevronDown, Package } from './DashboardIcons'
 
 const StockSize = ({ size, stock, formatCount }) => {
   const label = getStockLabel(stock)
-  return <li className='min-w-0 max-w-full [overflow-wrap:anywhere] text-xs leading-5'>
-    <p className='text-slate-600 dark:text-slate-300'>{size}: <span className='font-semibold tabular-nums text-slate-950 dark:text-slate-100'>{formatCount(stock)}</span> remaining</p>
-    <p className={label === 'Out of Stock' ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}>{label}</p>
+  return <li className={'dashboard-stock-size ' + (label === 'Out of Stock' ? 'is-out' : 'is-low')}>
+    <p>{size}</p><p className='dashboard-stock-quantity'>{formatCount(stock)}</p><p>remaining · {label}</p>
   </li>
 }
 
@@ -23,23 +22,30 @@ const LowStockProducts = ({ status, products, formatCount }) => {
   else if (status !== 'success' || !valid) message = 'Low-stock data unavailable.'
   else if (!products.length) message = 'Inventory levels look healthy.'
 
-  if (message) return <div aria-busy={status === 'loading'} className='flex min-h-32 min-w-0 flex-1 items-center justify-center py-6'>
-    <p role='status' className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
+  if (message) return <div aria-busy={status === 'loading'} className='dashboard-state'>
+    <p role='status'>{message}</p>
   </div>
 
-  return <ul role='list' aria-label='Products needing restocking, most urgent first' className='min-w-0 pt-4'>
-    {products.map(product => <li key={product.productId} className='min-w-0 border-b border-slate-100 py-3 last:border-b-0 dark:border-slate-800'>
-      <div className='flex min-w-0 items-start gap-3'>
-        <img src={assets.parcel_icon} alt='' className='h-10 w-10 shrink-0 rounded object-contain' />
-        <div className='min-w-0 flex-1'>
-          <p className='[overflow-wrap:anywhere] text-sm font-semibold leading-5 text-slate-950 dark:text-slate-100'>{product.name}</p>
-          <ul role='list' aria-label='Affected sizes and remaining stock' className='mt-2 flex min-w-0 flex-wrap gap-x-5 gap-y-2'>
+  return <>
+  <ul role='list' aria-label='Products needing restocking, most urgent first' className='dashboard-stock-list'>
+    {products.map(product => {
+      const unavailable = product.affectedSizes.filter(entry => getStockLabel(entry.stock) === 'Out of Stock').length
+      const low = product.affectedSizes.length - unavailable
+      return <li key={product.productId} className='dashboard-stock-item'>
+      <div className='dashboard-product-title'><span className='dashboard-product-icon'><Package size={20} aria-hidden='true' /></span><h3>{product.name}</h3></div>
+      <p className={'dashboard-stock-summary ' + (unavailable ? 'is-out' : 'is-low')}>{unavailable
+        ? `Out of Stock · ${formatCount(unavailable)} ${unavailable === 1 ? 'size unavailable' : 'sizes unavailable'}${low ? ` · ${formatCount(low)} low-stock ${low === 1 ? 'size' : 'sizes'}` : ''}`
+        : `Low Stock · ${formatCount(low)} ${low === 1 ? 'size needs' : 'sizes need'} restocking`}</p>
+      <details className='dashboard-stock-details'>
+        <summary>Size breakdown<ChevronDown size={16} aria-hidden='true' /></summary>
+          <ul role='list' aria-label={`Affected sizes and remaining stock for ${product.name}`} className='dashboard-stock-sizes'>
             {product.affectedSizes.map(entry => <StockSize key={entry.size} {...entry} formatCount={formatCount} />)}
           </ul>
-        </div>
-      </div>
-    </li>)}
+      </details>
+    </li>})}
   </ul>
+  <p className='dashboard-panel-note'>Inspect each size breakdown for exact available quantities.</p>
+  </>
 }
 
 export default LowStockProducts

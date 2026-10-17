@@ -1,29 +1,28 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext } from 'react'
 import { ShopContext } from '../context/shopContext';
-import Title from './Title';
+import HomeSectionHeading from './HomeSectionHeading';
 import { Link } from 'react-router-dom';
 import ProductItem from './ProductItem';
+import { ArrowRight } from 'lucide-react';
 
 
 const LatestCollection = () => {
   
     const { products } = useContext(ShopContext);
-    const [latestProducts,setLatestProducts] = useState([]);
-
-    useEffect(() => {
-        setLatestProducts(products.slice(0,10));
-    },[products]);
+    const latestProducts = products.slice(0,4);
 
     return (
 
-    <section className='mt-14 sm:mt-20'>
-      <div className='mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end'>
-        <div><Title text1={'LATEST'} text2={'COLLECTION'}/><p className='max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400'>Explore school uniforms and everyday essentials for your next school day.</p></div>
-        <Link to='/collection' className='inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-slate-900 hover:underline dark:text-slate-100'>View collection <span aria-hidden='true'>→</span></Link>
+    <section className='home-latest-collection' aria-labelledby='latest-collection-heading'>
+      <HomeSectionHeading id='latest-collection-heading' eyebrow={<><span className='home-copy-desktop'>Curated for campus</span><span className='home-copy-nondesktop'>Latest collection</span></>}
+        title={<><span className='home-copy-desktop'>Latest collection</span><span className='home-copy-tablet'>Campus essentials</span><span className='home-copy-mobile'>Campus essentials</span></>}
+        description={<><span className='home-copy-desktop'>Uniforms, PE essentials, and everyday items to keep you campus-ready.</span><span className='home-copy-tablet'>Uniforms and school merchandise for daily campus life.</span><span className='home-copy-mobile'>Browse products and check sizes before ordering.</span></>}
+        action={<Link to='/collection' className='home-outline-action home-latest-desktop-action'>View collection <ArrowRight className='storefront-action-icon' size={18} strokeWidth={1.75} aria-hidden='true' /></Link>} />
+      <div className='home-product-grid'>
+        {latestProducts.map(item => <ProductItem key={item._id} id={item._id} name={item.name} image={item.image} price={item.price} category={item.category} subCategory={item.subCategory} home/>)}
       </div>
-      <div className='product-grid'>
-        {latestProducts.map((item,index)=>(<ProductItem key={index} id={item._id} name={item.name} image={item.image} price={item.price}/>))}
-      </div>
+      {latestProducts.length === 0 && <p className='home-empty-state' role='status'>No essentials to display yet. Check the collection for available products.</p>}
+      <Link to='/collection' className='home-latest-mobile-action'>View the full collection <ArrowRight className='storefront-action-icon' size={18} strokeWidth={1.75} aria-hidden='true' /></Link>
     </section>
   )
 }

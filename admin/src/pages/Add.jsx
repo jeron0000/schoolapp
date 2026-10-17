@@ -4,222 +4,219 @@ import axios from 'axios'
 import { backendUrl } from '../utils/config'
 import { toast } from 'react-toastify'
 import { productGenders, productPrograms } from '../../../shared/productTaxonomy'
+import { ArrowLeft, ArrowRight, Check, Info, Plus, Upload, X } from '../components/DashboardIcons'
+import './Add.css'
+import { phpMinorUnits } from '../../../shared/money.js'
 
-const panelClass = 'min-w-0 rounded-lg border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'
-const labelClass = 'mb-2 block text-sm font-medium text-slate-900 dark:text-slate-100'
-const fieldClass = 'min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400'
-const iconPaths = {
-  details: 'M4 3h16v18H4ZM8 7h8M8 11h8M8 15h5',
-  image: 'M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M16 7h.01',
-  tag: 'M3 3h8l10 10-8 8L3 11ZM7 7h.01',
-  options: 'M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
-  upload: 'M12 16V4m-4 4 4-4 4 4M4 16v5h16v-5',
-  back: 'M20 12H4m6-6-6 6 6 6',
-  product: 'm12 3 9 5v9l-9 5-9-5V8ZM3 8l9 5 9-5M12 13v9'
+const sizeOptions = ['S', 'M', 'L', 'XL', 'XXL', 'One Size']
+const stockId = size => 'product-stock-' + size.replaceAll(' ', '-')
+const stockError = (size, value) => {
+  if (value === undefined || String(value).trim() === '') return `Enter an initial quantity for ${size}.`
+  return Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? '' : 'Use a non-negative whole number.'
 }
-const Icon = ({ name, className = 'h-5 w-5' }) => (
-  <svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className={className}><path d={iconPaths[name]} /></svg>
+
+const SectionHeading = ({ id, title, description }) => (
+  <header className='add-section-heading'>
+    <h2 id={id}>{title}</h2><p>{description}</p>
+  </header>
 )
-const SectionHeading = ({ id, icon, title, description }) => (
-  <div className='flex items-start gap-3 border-b border-slate-200 pb-3 dark:border-slate-800'>
-    <Icon name={icon} className='mt-0.5 h-6 w-6 shrink-0 text-amber-500 dark:text-amber-400' />
-    <div><h2 id={id} className='text-sm font-semibold text-slate-950 dark:text-slate-100'>{title}</h2><p className='mt-1 text-xs leading-5'>{description}</p></div>
-  </div>
-)
-const ImageUpload = ({ id, file, onChange, main = false }) => {
+
+const ImageUpload = ({ id, file, onChange, main = false, cover = false }) => {
   const preview = useRef(null)
+  const input = useRef(null)
+  const label = main ? 'main image' : `image ${id.slice(-1)}`
   useEffect(() => {
-    if (!file) return
+    if (!file) { input.current.value = ''; return }
     const url = URL.createObjectURL(file)
     preview.current.src = url
     return () => URL.revokeObjectURL(url)
   }, [file])
-  return (
-    <label htmlFor={id} className={'relative flex cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-dashed border-slate-400 bg-slate-50 p-3 text-center hover:border-amber-500 focus-within:ring-2 focus-within:ring-amber-400 dark:border-slate-600 dark:bg-slate-950/20 ' + (main ? 'h-56 sm:h-60' : 'h-32 sm:h-40')}>
-      <input id={id} aria-label={main ? 'Upload main image' : `Upload image ${id.slice(-1)}`} onChange={event => onChange(event.target.files[0])} type='file' className='sr-only' />
-      {file ? <img ref={preview} alt={main ? 'Selected main product image' : `Selected product image ${id.slice(-1)}`} className='h-full w-full object-contain' /> : <>
-        <Icon name='upload' className={main ? 'h-9 w-9 text-slate-400' : 'h-7 w-7 text-slate-400'} />
-        <span className='text-sm font-medium text-slate-900 dark:text-slate-100'>{main ? 'Upload Main Image' : 'Upload Image'}</span>
-        {main && <span className='mt-2 rounded-md bg-amber-400 px-5 py-2 text-xs font-semibold text-slate-950'>Choose Image</span>}
+  const removeImage = () => {
+    onChange(false)
+    input.current.value = ''
+    input.current.focus()
+  }
+  return <div className={'add-image-slot' + (main ? ' add-image-main' : '')}>
+    <label htmlFor={id} className='add-image-chooser'>
+      <input ref={input} id={id} aria-label={`${file ? 'Replace' : 'Upload'} ${label}`} aria-describedby='product-images-help' onChange={event => { const selected = event.target.files[0]; if (selected) onChange(selected) }} type='file' className='sr-only' />
+      {file ? <><img ref={preview} alt={`Selected ${label} preview`} className='add-image-preview' />{cover && <span className='add-cover-label'>Cover image</span>}</> : <>
+        {main ? <Upload size={36} aria-hidden='true' /> : <Plus size={24} aria-hidden='true' />}
+        <span className='add-image-title'>{main ? 'Main image' : `Image ${id.slice(-1)}`}</span>
+        {main && <><span className='add-image-description'>Used as the cover in the collection</span><span className='add-button add-button-brand'>Choose main image</span></>}
+        {!main && <span className='add-image-description'>Add photo</span>}
       </>}
     </label>
-  )
+    {file && <div className='add-image-review'>
+      <p>{file.name}{cover && <span> · Cover</span>}</p>
+      <div className='add-image-actions'>
+        <button type='button' onClick={() => input.current.click()} aria-label={`Replace ${label}`}>Replace</button>
+        <button type='button' onClick={removeImage} aria-label={`Remove ${label}`}><X size={16} aria-hidden='true' />Remove</button>
+      </div>
+    </div>}
+  </div>
 }
-const Add = ({token}) => {
 
+const Add = ({ token }) => {
   const [image1, setImage1] = useState(false)
   const [image2, setImage2] = useState(false)
   const [image3, setImage3] = useState(false)
   const [image4, setImage4] = useState(false)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [price, setPrice] = useState('')
+  const [category, setCategory] = useState(productGenders[0])
+  const [subCategory, setSubCategory] = useState(productPrograms[0])
+  const [BestSeller, setBestSeller] = useState(false)
+  const [NewArrival, setNewArrival] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const submissionPending = useRef(false)
+  const [sizes, setSizes] = useState([])
+  const [inventory, setInventory] = useState({})
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [feedback, setFeedback] = useState(null)
+  const discardDialog = useRef(null)
+  const keepEditing = useRef(null)
+  const cancelButton = useRef(null)
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [category, setCategory] = useState(productGenders[0]);
-  const [subCategory, setSubCategory] = useState(productPrograms[0]);
-  const [BestSeller, setBestSeller] = useState(false);
-  const [NewArrival, setNewArrival] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const submissionPending = useRef(false);
-  const [sizes, setSizes] = useState([]);
-  const [inventory, setInventory] = useState({});
-
-  const onSubmitHandler = async (e) => {
-    e.preventDefault();
-    if (submissionPending.current) return;
-    submissionPending.current = true;
-    setSubmitting(true);
-
-    try {
-      const formData = new FormData()
-
-      formData.append("name", name)
-      formData.append("description", description)
-      formData.append("price", price)
-      formData.append("category", category)
-      formData.append("subCategory", subCategory)
-      formData.append("BestSeller", BestSeller)
-      formData.append("NewArrival", NewArrival)
-      formData.append("sizes", JSON.stringify(sizes))
-      if (!sizes.length) throw new Error('Select at least one size.');
-      const initialStock = Object.fromEntries(sizes.map(size => [size, Number(inventory[size] ?? 0)]));
-      if (Object.values(initialStock).some(quantity => !Number.isSafeInteger(quantity) || quantity < 0)) throw new Error('Initial stock must be non-negative whole numbers.');
-      formData.append('inventory', JSON.stringify(initialStock))
-
-      image1 && formData.append("image1", image1)
-      image2 && formData.append("image2", image2)
-      image3 && formData.append("image3", image3)
-      image4 && formData.append("image4", image4)
-
-      const response = await axios.post(backendUrl + "/api/product/add", formData,{headers:{token}})
-
-       if (response.data.success) {
-          toast.success(response.data.message)
-          setName('')
-          setDescription('')
-          setImage1(false)
-          setImage2(false)
-          setImage3(false)
-          setImage4(false)
-          setPrice('')
-          setInventory({})
-       } else {
-            toast.error(response.data.message)
-        }
-
-      } catch (error) {
-        console.log(error);
-        toast.error(error.message)
-      } finally {
-        submissionPending.current = false;
-        setSubmitting(false);
-      }
-    }
-
-
-    return (
-      <section aria-labelledby='add-product-heading' className='mx-auto max-w-[1280px] space-y-5 text-slate-600 dark:text-slate-400'>
-        <nav aria-label='Breadcrumb' className='flex flex-wrap items-center gap-2 text-sm'>
-          <Link to='/orders' className='hover:text-slate-950 dark:hover:text-slate-100'>Admin</Link><span aria-hidden='true'>›</span>
-          <Link to='/list' className='hover:text-slate-950 dark:hover:text-slate-100'>Products</Link><span aria-hidden='true'>›</span>
-          <span aria-current='page' className='text-slate-900 dark:text-slate-200'>Add New Item</span>
-        </nav>
-        <header className='border-l-4 border-amber-400 pl-5'>
-          <h1 id='add-product-heading' className='text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-slate-100'>Add New Item</h1>
-          <p className='mt-1 text-sm leading-6'>Add a new product to the PAMO school merchandise store.</p>
-        </header>
-
-        <form onSubmit={onSubmitHandler} className='grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]'>
-          <section aria-labelledby='product-details-heading' className={panelClass + ' lg:col-start-1 lg:row-start-1'}>
-            <SectionHeading id='product-details-heading' icon='details' title='Product Details' description='Provide the basic information about the product.' />
-            <div className='mt-4 space-y-4'>
-              <div>
-                <label htmlFor='product-name' className={labelClass}>Product Name <span className='text-red-500' aria-hidden='true'>*</span></label>
-                <input id='product-name' onChange={(e) => setName(e.target.value)} value={name} className={fieldClass} type='text' placeholder='Enter product name' required />
-              </div>
-              <div>
-                <label htmlFor='product-description' className={labelClass}>Product Description</label>
-                <textarea id='product-description' onChange={(e) => setDescription(e.target.value)} value={description} className={fieldClass + ' min-h-28 resize-y'} rows={4} placeholder='Write a detailed description about this product…' />
-              </div>
-            </div>
-          </section>
-
-          <section aria-labelledby='product-images-heading' className={panelClass + ' lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start'}>
-            <SectionHeading id='product-images-heading' icon='image' title='Product Images' description='Upload up to 4 images. The first image will be used as the main photo.' />
-            <div className='mt-4 space-y-3'>
-              <ImageUpload id='image1' file={image1} onChange={setImage1} main />
-              <div className='grid grid-cols-2 gap-3 sm:grid-cols-3'>
-                <ImageUpload id='image2' file={image2} onChange={setImage2} />
-                <ImageUpload id='image3' file={image3} onChange={setImage3} />
-                <ImageUpload id='image4' file={image4} onChange={setImage4} />
-              </div>
-            </div>
-          </section>
-
-          <section aria-labelledby='product-classification-heading' className={panelClass + ' lg:col-start-1 lg:row-start-2'}>
-            <SectionHeading id='product-classification-heading' icon='tag' title='Classification & Pricing' description='Set the product gender, program, and price.' />
-            <div className='mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2'>
-              <div>
-                <label htmlFor='product-gender' className={labelClass}>Gender</label>
-                <select id='product-gender' value={category} onChange={(e) => setCategory(e.target.value)} className={fieldClass}>
-                  {productGenders.map(value => <option key={value} value={value}>{value}</option>)}
-                </select>
-              </div>
-              <div>
-                <label htmlFor='product-program' className={labelClass}>Program</label>
-                <select id='product-program' value={subCategory} onChange={(e) => setSubCategory(e.target.value)} className={fieldClass}>
-                  {productPrograms.map(value => <option key={value} value={value}>{value}</option>)}
-                </select>
-              </div>
-              <div className='sm:col-span-2'>
-                <label htmlFor='product-price' className={labelClass}>Price (₱)</label>
-                <div className='relative'>
-                  <span aria-hidden='true' className='pointer-events-none absolute left-3 top-3 text-sm'>₱</span>
-                  <input id='product-price' onChange={(e) => setPrice(e.target.value)} value={price} className={fieldClass + ' pl-8'} type='number' placeholder='0' />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section aria-labelledby='product-options-heading' className={panelClass + ' lg:col-span-2'}>
-            <SectionHeading id='product-options-heading' icon='options' title='Additional Options' description='Set available sizes and special labels for this product.' />
-            <div className='mt-4 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]'>
-              <fieldset>
-                <legend className={labelClass}>Available Sizes / Initial Stock</legend>
-                <div className='flex flex-wrap gap-2 sm:gap-3'>
-                  {['S', 'M', 'L', 'XL', 'XXL', 'One Size'].map(size => (
-                    <button key={size} type='button' aria-pressed={sizes.includes(size)} onClick={() => setSizes(prev => prev.includes(size) ? prev.filter(item => item !== size) : [...prev, size])} className={'min-h-11 min-w-11 rounded-md border px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ' + (sizes.includes(size) ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-500')}>
-                      {size}
-                    </button>
-                  ))}
-                </div>
-                <div className='mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3'>
-                  {sizes.map(size => <label key={size} className='min-w-0 text-xs'>{size} stock<input aria-label={`Initial stock for ${size}`} type='number' min='0' step='1' required value={inventory[size] ?? 0} onChange={event => setInventory(previous => ({ ...previous, [size]: event.target.value }))} className={fieldClass + ' mt-1'} /></label>)}
-                </div>
-              </fieldset>
-              <fieldset className='border-t border-slate-200 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0 dark:border-slate-800'>
-                <legend className={labelClass}>Special Labels</legend>
-                <div className='grid gap-3 sm:grid-cols-2'>
-                  <label className='flex min-h-11 cursor-pointer items-start gap-3' htmlFor='BestSeller'>
-                    <input onChange={() => setBestSeller(prev => !prev)} checked={BestSeller} type='checkbox' id='BestSeller' className='mt-0.5 h-5 w-5 shrink-0 accent-amber-400' />
-                    <span><span className='block text-sm font-medium text-slate-900 dark:text-slate-100'>Add to Bestsellers</span><span className='mt-1 block text-xs leading-5'>Show this product in the Best Sellers section</span></span>
-                  </label>
-                  <label className='flex min-h-11 cursor-pointer items-start gap-3' htmlFor='NewArrival'>
-                    <input onChange={() => setNewArrival(prev => !prev)} checked={NewArrival} type='checkbox' id='NewArrival' className='mt-0.5 h-5 w-5 shrink-0 accent-amber-400' />
-                    <span><span className='block text-sm font-medium text-slate-900 dark:text-slate-100'>Mark as New Arrival</span><span className='mt-1 block text-xs leading-5'>Show this product in the New Arrivals section</span></span>
-                  </label>
-                </div>
-              </fieldset>
-            </div>
-          </section>
-
-          <div className='flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 lg:col-span-2 dark:border-slate-800'>
-            <Link to='/list' className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 text-sm font-medium text-slate-800 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800'><Icon name='back' /> Cancel</Link>
-            <button type='submit' disabled={submitting} className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-amber-400 px-6 text-sm font-semibold text-slate-950 hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-wait disabled:opacity-60'><Icon name='product' /> {submitting ? 'Adding Product…' : 'Add Product'}</button>
-          </div>
-        </form>
-      </section>
-    )
+  const clearError = id => setFieldErrors(previous => previous[id] ? { ...previous, [id]: '' } : previous)
+  const recordInvalid = event => setFieldErrors(previous => ({ ...previous, [event.target.id]: event.target.validationMessage }))
+  const dirty = Boolean(name || description || price || image1 || image2 || image3 || image4 || sizes.length || BestSeller || NewArrival || category !== productGenders[0] || subCategory !== productPrograms[0])
+  const cancel = event => {
+    if (submissionPending.current) { event.preventDefault(); return }
+    if (!dirty) return
+    event.preventDefault()
+    discardDialog.current.showModal()
+    keepEditing.current.focus()
   }
 
-  export default Add
+  const onSubmitHandler = async event => {
+    event.preventDefault()
+    if (submissionPending.current) return
+    const errors = {}
+    try { phpMinorUnits(price) } catch { errors['product-price'] = 'Enter a non-negative PHP price with at most two decimal places.' }
+    if (!sizes.length) errors.sizes = 'Select at least one size.'
+    sizes.forEach(size => { const message = stockError(size, inventory[size]); if (message) errors[stockId(size)] = message })
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors)
+      document.getElementById(Object.keys(errors)[0] === 'sizes' ? 'product-size-S' : Object.keys(errors)[0])?.focus()
+      return
+    }
+    submissionPending.current = true
+    setSubmitting(true)
+    setFieldErrors({})
+    setFeedback(null)
+    try {
+      const formData = new FormData()
+      formData.append('name', name)
+      formData.append('description', description)
+      formData.append('price', price)
+      formData.append('category', category)
+      formData.append('subCategory', subCategory)
+      formData.append('BestSeller', BestSeller)
+      formData.append('NewArrival', NewArrival)
+      formData.append('sizes', JSON.stringify(sizes))
+      const initialStock = Object.fromEntries(sizes.map(size => [size, Number(inventory[size])]))
+      formData.append('inventory', JSON.stringify(initialStock))
+      image1 && formData.append('image1', image1)
+      image2 && formData.append('image2', image2)
+      image3 && formData.append('image3', image3)
+      image4 && formData.append('image4', image4)
+      const response = await axios.post(backendUrl + '/api/product/add', formData, { headers: { token } })
+      if (response.data.success) {
+        const message = response.data.message || 'Product added successfully.'
+        toast.success(message)
+        setFeedback({ type: 'success', message })
+        setName('')
+        setDescription('')
+        setImage1(false)
+        setImage2(false)
+        setImage3(false)
+        setImage4(false)
+        setPrice('')
+        setInventory({})
+      } else {
+        const message = response.data.message || 'Product could not be added. Your entries have been kept.'
+        toast.error(message)
+        setFeedback({ type: 'error', message })
+      }
+    } catch (error) {
+      const message = error.message || 'Product could not be added. Your entries have been kept.'
+      toast.error(message)
+      setFeedback({ type: 'error', message })
+    } finally {
+      submissionPending.current = false
+      setSubmitting(false)
+    }
+  }
+
+  const images = [image1, image2, image3, image4]
+  const coverIndex = images.findIndex(Boolean)
+  const imageSetters = [setImage1, setImage2, setImage3, setImage4]
+  return <main aria-labelledby='add-product-heading' className='pamo-add-product'>
+    <nav aria-label='Breadcrumb' className='add-breadcrumb'>
+      <Link to='/orders'>Admin</Link><span aria-hidden='true'>/</span><Link to='/list'>Products</Link><span aria-hidden='true'>/</span><span aria-current='page'>Add Product</span>
+    </nav>
+    <header className='add-page-heading'><h1 id='add-product-heading'>Add Product</h1><p>Create an item with accurate details, images, and size-based stock.</p></header>
+    {feedback && <p className={'add-feedback is-' + feedback.type}>{feedback.message}</p>}
+    <form onSubmit={onSubmitHandler} onInvalid={recordInvalid} aria-busy={submitting}>
+      <fieldset disabled={submitting} className='add-form-sections'>
+        <legend className='sr-only'>Product creation fields</legend>
+        <section aria-labelledby='product-details-heading' className='add-panel add-details'>
+          <SectionHeading id='product-details-heading' title='Product Details' description='Name and describe the merchandise for students.' />
+          <div className='add-field-stack'>
+            <div className='add-field'><label htmlFor='product-name'>Product Name <span aria-hidden='true'>*</span></label>
+              <input id='product-name' onChange={event => { setName(event.target.value); clearError('product-name') }} value={name} className='add-input' type='text' placeholder='Enter a clear product name' required aria-invalid={!!fieldErrors['product-name']} aria-describedby={fieldErrors['product-name'] ? 'product-name-error' : undefined} />
+              {fieldErrors['product-name'] && <p id='product-name-error' className='add-field-error'>{fieldErrors['product-name']}</p>}
+            </div>
+            <div className='add-field'><label htmlFor='product-description'>Product Description <span aria-hidden='true'>*</span></label>
+              <textarea id='product-description' onChange={event => { setDescription(event.target.value); clearError('product-description') }} value={description} className='add-input' rows={3} placeholder='Describe the merchandise' required aria-invalid={!!fieldErrors['product-description']} aria-describedby={fieldErrors['product-description'] ? 'product-description-error' : undefined} />
+              {fieldErrors['product-description'] && <p id='product-description-error' className='add-field-error'>{fieldErrors['product-description']}</p>}
+            </div>
+          </div>
+        </section>
+        <section aria-labelledby='product-classification-heading' className='add-panel add-classification'>
+          <SectionHeading id='product-classification-heading' title='Classification & Pricing' description='Choose the correct audience, program, and price.' />
+          <div className='add-classification-fields'>
+            <div className='add-field'><label htmlFor='product-gender'>Gender</label><select id='product-gender' value={category} onChange={event => setCategory(event.target.value)} className='add-input'>{productGenders.map(value => <option key={value} value={value}>{value}</option>)}</select></div>
+            <div className='add-field'><label htmlFor='product-program'>Program</label><select id='product-program' value={subCategory} onChange={event => setSubCategory(event.target.value)} className='add-input'>{productPrograms.map(value => <option key={value} value={value}>{value}</option>)}</select></div>
+            <div className='add-field add-price'><label htmlFor='product-price'>Price (PHP)</label><div className='add-price-input'><span aria-hidden='true'>₱</span><input id='product-price' onChange={event => { setPrice(event.target.value); clearError('product-price') }} value={price} className='add-input' type='number' min='0' step='0.01' required inputMode='decimal' placeholder='Enter price in PHP' aria-invalid={!!fieldErrors['product-price']} aria-describedby={fieldErrors['product-price'] ? 'product-price-error' : undefined} /></div>{fieldErrors['product-price'] && <p id='product-price-error' className='add-field-error'>{fieldErrors['product-price']}</p>}</div>
+          </div>
+        </section>
+        <section aria-labelledby='product-images-heading' className='add-panel add-images'>
+          <SectionHeading id='product-images-heading' title='Product Images' description='Up to 4 images. First selected image becomes the cover.' />
+          <div className='add-image-grid'><ImageUpload id='image1' file={image1} onChange={setImage1} main cover={coverIndex === 0} /><div className='add-extra-images'>{images.slice(1).map((file, index) => <ImageUpload key={index + 2} id={`image${index + 2}`} file={file} onChange={imageSetters[index + 1]} cover={coverIndex === index + 1} />)}</div></div>
+          <p id='product-images-help' className='add-help'>Choose image files to preview, replace, or remove before submission. Uploaded images are validated by the server when saved.</p>
+        </section>
+        <section aria-labelledby='product-stock-heading' className='add-panel add-stock'>
+          <SectionHeading id='product-stock-heading' title='Available Sizes & Initial Stock' description='Select a size, then enter the exact starting quantity for each selected size.' />
+          <p className='add-stock-notice'><Info size={18} aria-hidden='true' /><span>An empty quantity needs attention. Enter 0 only when a size is intentionally out of stock.</span></p>
+          <fieldset className='add-size-options' aria-describedby={'product-size-help' + (fieldErrors.sizes ? ' product-sizes-error' : '')}>
+            <legend>Size options <span aria-hidden='true'>*</span></legend>
+            <div className='add-size-buttons'>{sizeOptions.map(size => <button key={size} id={`product-size-${size.replaceAll(' ', '-')}`} type='button' aria-pressed={sizes.includes(size)} onClick={() => { setSizes(previous => previous.includes(size) ? previous.filter(item => item !== size) : [...previous, size]); clearError('sizes') }} className='add-size-button'>{sizes.includes(size) && <Check size={16} aria-hidden='true' />}{size}</button>)}</div>
+            <p id='product-size-help' className='add-help'>One Size can be selected alongside clothing sizes. Deselecting a size keeps its entered quantity for reselection.</p>
+            {fieldErrors.sizes && <p id='product-sizes-error' className='add-field-error'>{fieldErrors.sizes}</p>}
+          </fieldset>
+          <fieldset className='add-stock-fields'><legend>Initial stock for selected sizes</legend>
+            {sizes.length ? <div className='add-stock-grid'>{sizes.map(size => {
+              const id = stockId(size), value = inventory[size] ?? '', message = stockError(size, value), configured = !message
+              return <div key={size} className='add-stock-item'><div className='add-stock-control'><label htmlFor={id}>Size {size}</label><input id={id} aria-label={`Initial stock for ${size}`} type='number' inputMode='numeric' min='0' step='1' required value={value} onChange={event => { setInventory(previous => ({ ...previous, [size]: event.target.value })); clearError(id) }} className='add-input' aria-invalid={!!fieldErrors[id]} aria-describedby={id + '-help'} /><span>units</span></div><p id={id + '-help'} className={fieldErrors[id] ? 'add-field-error' : configured ? 'add-stock-result' + (Number(value) === 0 ? ' is-zero' : '') : 'add-help'}>{fieldErrors[id] || (configured ? Number(value) === 0 ? '0 units · intentionally unavailable' : `${value} units configured` : 'Enter a starting quantity.')}</p></div>
+            })}</div> : <p className='add-help'>Select available sizes to enter their initial stock.</p>}
+          </fieldset>
+        </section>
+        <section aria-labelledby='product-labels-heading' className='add-panel add-labels'>
+          <SectionHeading id='product-labels-heading' title='Storefront Labels' description='Optional flags that change how the product is presented.' />
+          <div className='add-label-options'>
+            <label htmlFor='BestSeller'><input onChange={() => setBestSeller(previous => !previous)} checked={BestSeller} type='checkbox' id='BestSeller' /><span><strong>Feature in Best Sellers</strong><span>Displays this item in the curated Best Sellers section.</span></span></label>
+            <label htmlFor='NewArrival'><input onChange={() => setNewArrival(previous => !previous)} checked={NewArrival} type='checkbox' id='NewArrival' /><span><strong>Mark as New Arrival</strong><span>Displays this item in the New Arrivals section.</span></span></label>
+          </div>
+        </section>
+      </fieldset>
+      <footer className='add-form-actions'><p className='add-help'>Review all required fields and selected size quantities before adding.</p><div><Link ref={cancelButton} to='/list' onClick={cancel} aria-disabled={submitting} className='add-button'><ArrowLeft size={18} aria-hidden='true' />Cancel</Link><button type='submit' disabled={submitting} className='add-button add-button-brand'>{submitting ? 'Adding Product…' : 'Add Product'}<ArrowRight size={18} aria-hidden='true' /></button></div><p className='add-help'>You will receive confirmation after the product has been added.</p></footer>
+    </form>
+    <dialog ref={discardDialog} aria-labelledby='add-discard-heading' aria-describedby='add-discard-description' onClose={() => cancelButton.current?.focus()} className='add-discard-dialog'>
+      <h2 id='add-discard-heading'>Discard this product?</h2><p id='add-discard-description'>Your unsaved details and selected images will be lost.</p><div><button ref={keepEditing} type='button' className='add-button add-button-brand' onClick={() => discardDialog.current.close()}>Keep editing</button><Link to='/list' className='add-button' onClick={() => discardDialog.current.close()}>Discard changes</Link></div>
+    </dialog>
+  </main>
+}
+
+export default Add

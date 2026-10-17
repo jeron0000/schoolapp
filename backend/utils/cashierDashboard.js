@@ -1,4 +1,5 @@
 import orderModel from '../models/orderModel.js';
+import { phpMinorUnits, validPhpAmount } from '../../shared/money.js';
 
 // Match the established Philippines calendar convention; Manila has no DST.
 const timezone = 'Asia/Manila';
@@ -20,13 +21,9 @@ export const cashierDashboardRange = (key = 'today', now = Date.now()) => {
     return { key, start, end: now, timezone };
 };
 
-// Shift the stored Number's decimal representation before rounding, avoiding
-// binary multiplication drift (e.g. 10.075 * 100). Storage remains unchanged.
+// Legacy fractional-cent amounts are excluded for review, never rounded into collections.
 const amountCents = amount => {
-    if (!Number.isFinite(amount) || amount < 0) return null;
-    const [coefficient, exponent = '0'] = String(amount).split('e');
-    const cents = Math.round(Number(`${coefficient}e${Number(exponent) + 2}`));
-    return Number.isSafeInteger(cents) ? cents : null;
+    return validPhpAmount(amount) ? phpMinorUnits(amount) : null;
 };
 const addCents = (left, right) => {
     const total = left + right;
@@ -101,8 +98,8 @@ export const getCashierDashboardOverview = async range => {
     try {
         for await (const order of cursor) {
             if (order.payment === false && order.status === 'Sent to Cashier') {
-                // Match the existing confirmation guards: cash, unpaid, positive stored total.
-                if (order.paymentMethod === 'COD' && Number.isFinite(order.amount) && order.amount > 0) {
+                // Match confirmation: cash, unpaid, explicit PHP and exact positive total.
+                if (order.paymentMethod === 'COD' && order.paymentCurrency === 'PHP' && validPhpAmount(order.amount) && order.amount > 0) {
                     awaitingPayment++;
                     keepDetail(awaitingPayments, awaitingDetail(order, range.end), oldestFirst);
                 } else quality.nonActionableAwaitingOrders++;

@@ -1,9 +1,11 @@
+import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
+import { issueAuthToken } from '../utils/authTokens.js';
+import jwt from 'jsonwebtoken';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import express from 'express';
-import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import { connectTestDatabase } from './helpers/database.js';
 import orderModel from '../models/orderModel.js';
 import productModel from '../models/productModel.js';
 import adminAuth from '../middleware/adminAuth.js';
@@ -62,13 +64,13 @@ test('overview requires existing PAMO Admin credentials and denies student/cashi
     process.env.JWT_SECRET = 'dashboard-test-only-secret';
     process.env.ADMIN_EMAIL = 'dashboard-admin@example.test';
     process.env.ADMIN_PASSWORD = 'dashboard-admin-fixture';
-    for (const token of [undefined, jwt.sign({ id: '0123456789abcdef01234567' }, process.env.JWT_SECRET), jwt.sign({ id: '0123456789abcdef01234567', role: 'admin' }, process.env.JWT_SECRET)]) {
+    for (const token of [undefined, issueAuthToken('0123456789abcdef01234567', 'customer'), jwt.sign({ sub: '0123456789abcdef01234567', role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '8h' })]) {
         const res = response();
         await adminAuth({ headers: { token }, query: { role: 'admin' } }, res, () => assert.fail('Unexpected dashboard access'));
         assert.equal(res.body.success, false);
     }
     let allowed = false;
-    await adminAuth({ headers: { token: jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET) } }, response(), () => { allowed = true; });
+    await adminAuth({ headers: { token: issueAuthToken(ADMIN_SUBJECT, 'admin') } }, response(), () => { allowed = true; });
     assert.equal(allowed, true);
 });
 
@@ -82,26 +84,14 @@ test('database failures are not exposed to dashboard clients', async t => {
 });
 
 test('real database dashboard analytics on an isolated database', { skip: process.env.PAMO_DASHBOARD_INTEGRATION !== '1', timeout: 180000 }, async t => {
-    const { default: dotenv } = await import('dotenv');
-    dotenv.config({ quiet: true });
-    const database = 'pamo_dash_test_' + randomUUID().replaceAll('-', '').slice(0, 20);
-    t.after(async () => {
-        try {
-            if (mongoose.connection.readyState === 1) {
-                assert.equal(mongoose.connection.name, database);
-                assert.match(database, /^pamo_dash_test_[a-f0-9]{20}$/);
-                await mongoose.connection.dropDatabase();
-            }
-        } finally { await mongoose.disconnect(); }
-    });
-    await mongoose.connect(process.env.MONGODB_URI + '/e-commerce', { dbName: database, serverSelectionTimeoutMS: 10000 });
+    await connectTestDatabase(t, mongoose, 'dashboard');
     const now = Date.parse('2026-10-06T15:00:00+08:00');
     const range = dashboardRange('30d', now);
     const productId = String(new mongoose.Types.ObjectId());
     const item = (price = 500, quantity = 2, id = productId) => ({ _id: id, name: 'Historical uniform', price, quantity, size: 'M' });
     const order = (overrides = {}) => orderModel.create({ userId: String(new mongoose.Types.ObjectId()), items: [item()], amount: 1040,
         address: { firstName: 'Student', lastName: 'Snapshot', phone: 'private', email: 'private@example.test' },
-        date: now - 5000, paymentMethod: 'COD', payment: false, status: 'Order Placed', ...overrides });
+        date: now - 5000, paymentMethod: 'COD', paymentCurrency: 'PHP', payment: false, status: 'Order Placed', ...overrides });
     const overview = () => getDashboardOverview(range);
 
     await t.test('empty data returns zeros, empty lists and a genuine zero daily series', async () => {
@@ -265,10 +255,10 @@ test('real database dashboard analytics on an isolated database', { skip: proces
         httpTest.after(() => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
         await new Promise(resolve => server.once('listening', resolve));
         const url = `http://127.0.0.1:${server.address().port}/api/dashboard/overview`;
-        const admin = jwt.sign(process.env.ADMIN_EMAIL + process.env.ADMIN_PASSWORD, process.env.JWT_SECRET);
+        const admin = issueAuthToken(ADMIN_SUBJECT, 'admin');
         const beforeOrders = await orderModel.find({}).sort({ _id: 1 }).lean();
         const beforeProducts = await productModel.find({}).sort({ _id: 1 }).lean();
-        for (const token of [undefined, jwt.sign({ id: productId }, process.env.JWT_SECRET), jwt.sign({ id: productId, role: 'cashier' }, process.env.JWT_SECRET), jwt.sign({ id: productId, role: 'admin' }, process.env.JWT_SECRET)]) {
+        for (const token of [undefined, issueAuthToken(productId, 'customer'), issueAuthToken(productId, 'cashier'), jwt.sign({ sub: productId, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '8h' })]) {
             const res = await fetch(url, { headers: token ? { token } : {} });
             assert.equal((await res.json()).success, false);
         }

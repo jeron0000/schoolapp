@@ -1,10 +1,22 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowRight } from 'lucide-react'
     
-    const NewsletterBox = () => {
+    const NewsletterBox = ({ home = false }) => {
 
         const onSubmitHandler = (event) => {
             event.preventDefault();
         }
+        if (home) return (
+          <section className='home-shopping-cta' aria-labelledby='shopping-cta-heading'>
+            <div>
+              <p className='home-eyebrow'><span className='home-copy-desktop'>Ready for the next school day?</span><span className='home-copy-tablet'>Everything you need in one place</span><span className='home-copy-mobile'>Ready for campus?</span></p>
+              <h2 id='shopping-cta-heading'><span className='home-copy-desktop'>Everything you need, in one place.</span><span className='home-copy-tablet'>Get ready for campus.</span><span className='home-copy-mobile'>Everything in one place.</span></h2>
+              <p className='home-copy-desktop'>Shop the collection, check sizes, and keep track of your order.</p>
+            </div>
+            <Link to='/collection' className='home-brand-action'>Browse collection <ArrowRight className='storefront-action-icon' size={18} strokeWidth={1.75} aria-hidden='true' /></Link>
+          </section>
+        )
 
       return (
 

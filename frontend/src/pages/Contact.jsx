@@ -1,65 +1,322 @@
-import React from 'react'
-import Title from '../components/Title'
-import { assets } from '../assets/assets'
-import NewsletterBox from '../components/NewsletterBox'
+import { Link } from "react-router-dom";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  MapPin,
+  Phone,
+  Smartphone,
+} from "lucide-react";
+import { assets } from "../assets/assets";
+import "../components/StorefrontFoundation.css";
+import "./Contact.css";
 
+const campusUrl = "https://www.sti.edu/campuses/carmona";
+// View Map destination published on the official STI College Carmona page.
+const campusMapUrl = "https://maps.app.goo.gl/jGUbPypfedHoWMun7";
 const supportItems = [
-  { title: 'Order Support', description: 'Have a question about your uniform order? Reach out using the contact details above.', icon: assets.cart_icon, accent: 'bg-amber-100 dark:bg-amber-400/10' },
-  { title: 'General Inquiries', description: 'For questions about school essentials, contact STI College Carmona.', icon: assets.search_icon, accent: 'bg-blue-100 dark:bg-blue-500/15' },
-  { title: 'Campus Concerns', description: 'For campus-related inquiries, reach out to STI College Carmona directly.', icon: assets.profile_icon, accent: 'bg-emerald-100 dark:bg-emerald-500/15' }
-]
+  {
+    title: "Order Support",
+    description:
+      "Check pending orders, payments, cancellations, and fulfillment progress.",
+    tablet: "See your existing orders and track progress.",
+    mobile: "Track payments, status and claiming.",
+    label: "View My Orders",
+    to: "/orders",
+  },
+  {
+    title: "General Inquiries",
+    description:
+      "Speak with STI College Carmona about school essentials and campus information.",
+    tablet: "Call the campus for school information.",
+    mobile: "Contact STI College Carmona directly.",
+    label: "Call the campus",
+    href: "tel:+63464301661",
+  },
+  {
+    title: "Campus Concerns",
+    description:
+      "Find the campus location and official institutional information.",
+    tablet: "Open the campus location for directions.",
+    mobile: "Find your way to the campus.",
+    label: "Get directions",
+    href: campusMapUrl,
+    external: true,
+  },
+];
 
-const Contact = () => {
-  return (
-    <section className='page-section pb-6 sm:pb-8 lg:pb-10'>
-      <header>
-        <p className='eyebrow mb-3'>We're here to help</p>
-        <Title text1={'CONTACT'} text2={'US'}/>
-        <p className='mt-3 max-w-xl text-sm leading-7 text-slate-600 dark:text-slate-400'>Have questions about school uniforms, orders, or your campus? Reach out using the contact details below.</p>
+const Contact = () => (
+  <div className="contact-page">
+    <div className="contact-container">
+      <header className="contact-editorial">
+        <p className="contact-eyebrow">WE'RE HERE TO HELP</p>
+        <h1>
+          CONTACT <span>US</span>
+        </h1>
+        <p className="contact-description">
+          <span className="contact-copy-desktop">
+            Questions about uniforms, orders, or campus services?
+          </span>
+          <span className="contact-copy-tablet">
+            For school uniforms, orders, and campus inquiries.
+          </span>
+          <span className="contact-copy-mobile">
+            Questions about your order, school essentials, or campus?
+          </span>
+        </p>
       </header>
 
-      <div className='mt-7 grid items-stretch gap-5 lg:grid-cols-2'>
-        <figure className='overflow-hidden rounded-2xl bg-[#ffff00] lg:relative'>
-          <img className='block aspect-[7/6] w-full object-contain lg:absolute lg:inset-0 lg:h-full lg:aspect-auto' src={assets.contact_img} alt='STI logo on a yellow background' width='894' height='894'/>
-        </figure>
-        <section aria-labelledby='contact-campus-heading' className='panel flex min-w-0 flex-col gap-6 p-6 sm:p-8'>
-          <div>
-            <p className='eyebrow mb-3'>Visit or get in touch</p>
-            <h2 id='contact-campus-heading' className='text-2xl font-semibold tracking-tight sm:text-3xl'>STI College Carmona</h2>
-            <p className='mt-3 text-sm leading-6 text-slate-600 dark:text-slate-400'>Visit our campus or reach us through the contact details below.</p>
-          </div>
-          <dl className='space-y-5 text-sm'>
-            <div className='flex items-start gap-4'>
-              <span className='flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' aria-hidden='true'>
-                <svg className='h-6 w-6' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7'><path d='M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z'/><circle cx='12' cy='10' r='2.5'/></svg>
+      <div className="contact-campus">
+        <section
+          className="contact-card"
+          aria-labelledby="contact-campus-heading"
+        >
+          <header className="contact-card-intro">
+            <p className="contact-eyebrow">
+              <span className="contact-copy-desktop">
+                VISIT OR GET IN TOUCH
               </span>
-              <div className='min-w-0'><dt className='font-semibold text-slate-900 dark:text-slate-100'>Address</dt><dd className='mt-1 leading-6 text-slate-600 dark:text-slate-400'>South Luzon Expressway, Maduya, Carmona, 4116 Cavite</dd></div>
+              <span className="contact-copy-tablet">STI COLLEGE CARMONA</span>
+              <span className="contact-copy-mobile">STI COLLEGE CARMONA</span>
+            </p>
+            <h2 id="contact-campus-heading">
+              <span className="contact-copy-desktop">STI College Carmona</span>
+              <span className="contact-copy-tablet">
+                Campus contact information
+              </span>
+              <span className="contact-copy-mobile">Visit or get in touch</span>
+            </h2>
+            <p className="contact-description">
+              <span className="contact-copy-desktop">
+                Use these campus contact details for inquiries. For an existing
+                order, you can also check its status in PAMO.
+              </span>
+              <span className="contact-copy-tablet">
+                For existing orders, the My Orders page also shows progress and
+                payment details.
+              </span>
+              <span className="contact-copy-mobile">
+                Published school contact information.
+              </span>
+            </p>
+          </header>
+          <dl className="contact-details">
+            <div className="contact-detail">
+              <span className="contact-icon" aria-hidden="true">
+                <MapPin size={24} strokeWidth={1.75} />
+              </span>
+              <div className="contact-detail-copy">
+                <dt>CAMPUS LOCATION</dt>
+                <dd>
+                  <strong>South Luzon Expressway, Maduya</strong>
+                  <span>Carmona, 4116 Cavite</span>
+                </dd>
+              </div>
+              <a
+                className="contact-action btn-secondary"
+                href={campusMapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get directions{" "}
+                <ArrowUpRight size={16} strokeWidth={1.75} aria-hidden="true" />
+                <span className="sr-only">
+                  {" "}
+                  (Google Maps, opens in a new tab)
+                </span>
+              </a>
             </div>
-            <div className='flex items-start gap-4'>
-              <span className='flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800' aria-hidden='true'><img className='theme-icon h-6 w-6 object-contain' src={assets.support_img} alt=''/></span>
-              <div className='min-w-0'><dt className='font-semibold text-slate-900 dark:text-slate-100'>Contact details</dt><dd className='mt-1 break-words leading-6 text-slate-600 dark:text-slate-400'>Tel: (046) 430-1661 / 1671<br/>Mobile: 0918 680 4021</dd></div>
+            <div className="contact-detail">
+              <span className="contact-icon" aria-hidden="true">
+                <Phone size={24} strokeWidth={1.75} />
+              </span>
+              <div className="contact-landlines">
+                <dt>LANDLINES</dt>
+                <dd>
+                  <strong>(046) 430-1661</strong>
+                  <a
+                    className="contact-action btn-secondary"
+                    href="tel:+63464301661"
+                    aria-label="Call (046) 430-1661"
+                  >
+                    Call 1661{" "}
+                    <ArrowUpRight
+                      size={16}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  </a>
+                </dd>
+                <dd>
+                  <strong>(046) 430-1671</strong>
+                  <a
+                    className="contact-action btn-secondary"
+                    href="tel:+63464301671"
+                    aria-label="Call (046) 430-1671"
+                  >
+                    Call 1671{" "}
+                    <ArrowUpRight
+                      size={16}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  </a>
+                </dd>
+              </div>
+            </div>
+            <div className="contact-detail">
+              <span className="contact-icon" aria-hidden="true">
+                <Smartphone size={24} strokeWidth={1.75} />
+              </span>
+              <div className="contact-detail-copy">
+                <dt>MOBILE</dt>
+                <dd>
+                  <strong>0918 680 4021</strong>
+                </dd>
+              </div>
+              <a
+                className="contact-action contact-action-primary btn-primary"
+                href="tel:+639186804021"
+                aria-label="Call mobile 0918 680 4021"
+              >
+                Call mobile{" "}
+                <ArrowUpRight size={16} strokeWidth={1.75} aria-hidden="true" />
+              </a>
             </div>
           </dl>
-          <div className='mt-auto border-t border-slate-200 pt-6 dark:border-slate-800'>
-            <h3 className='text-base font-semibold'>Explore STI College Carmona</h3>
-            <p className='mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400'>Learn more about STI College Carmona, its programs, admissions, and campus information.</p>
-            <a href='https://www.sti.edu/campuses/carmona' target='_blank' rel='noopener noreferrer' className='btn-secondary mt-4'>Explore STI <span aria-hidden='true'>→</span></a>
-          </div>
+          <p className="contact-note">
+            These are STI College Carmona contact numbers. For help with an
+            existing order, check <Link to="/orders">My Orders</Link> for its
+            current status.
+          </p>
         </section>
+
+        <aside
+          className="contact-campus-panel"
+          aria-labelledby="contact-website-heading"
+        >
+          <figure className="contact-visual">
+            <img
+              src={assets.contact_img}
+              alt="STI logo on a yellow background"
+              width="894"
+              height="894"
+            />
+          </figure>
+          <div className="contact-campus-copy">
+            <p className="contact-eyebrow">OFFICIAL CAMPUS WEBSITE</p>
+            <h2 id="contact-website-heading">
+              <span className="contact-copy-desktop">
+                Explore STI College Carmona
+              </span>
+              <span className="contact-copy-tablet">
+                Explore the official campus website
+              </span>
+              <span className="contact-copy-mobile">School information</span>
+            </h2>
+            <p className="contact-description">
+              <span className="contact-copy-wide">
+                For information about programs, admissions, and general campus
+                services.
+              </span>
+              <span className="contact-copy-mobile">
+                Programs, admissions and campus details.
+              </span>
+            </p>
+            <a
+              className="contact-action btn-secondary"
+              href={campusUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Explore STI website{" "}
+              <ArrowUpRight size={16} strokeWidth={1.75} aria-hidden="true" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            <div className="contact-order-note">
+              <h3>For order-specific help</h3>
+              <p>
+                Start with <Link to="/orders">My Orders</Link> for your latest
+                status.
+              </p>
+            </div>
+          </div>
+        </aside>
       </div>
 
-      <section aria-label='Contact support information' className='my-10 grid gap-5 sm:my-12 sm:gap-6 lg:my-16 lg:grid-cols-3'>
-        {supportItems.map(({ title, description, icon, accent }) => (
-          <article key={title} className='panel flex items-start gap-5 p-5 sm:p-6'>
-            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${accent}`} aria-hidden='true'><img src={icon} className='theme-icon h-6 w-6 object-contain' alt=''/></span>
-            <div className='min-w-0'><h3 className='text-sm font-semibold'>{title}</h3><p className='mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400'>{description}</p></div>
-          </article>
-        ))}
+      <section
+        className="contact-support"
+        aria-labelledby="contact-support-heading"
+      >
+        <p className="contact-eyebrow">GET HELP WITH</p>
+        <h2 id="contact-support-heading">
+          <span className="contact-copy-desktop">
+            Choose the right next step
+          </span>
+          <span className="contact-copy-tablet">
+            What do you need help with?
+          </span>
+          <span className="contact-copy-mobile">Find your next step</span>
+        </h2>
+        <p className="contact-description">
+          Three direct paths to the information or assistance you need.
+        </p>
+        <ol className="contact-support-grid">
+          {supportItems.map(
+            (
+              { title, description, tablet, mobile, label, to, href, external },
+              index,
+            ) => (
+              <li className="contact-support-card" key={title}>
+                <span className="contact-support-number" aria-hidden="true">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <h3>{title}</h3>
+                <p>
+                  <span className="contact-copy-desktop">{description}</span>
+                  <span className="contact-copy-tablet">{tablet}</span>
+                  <span className="contact-copy-mobile">{mobile}</span>
+                </p>
+                {to ? (
+                  <Link
+                    className="contact-support-link contact-support-link-primary"
+                    to={to}
+                  >
+                    {label}{" "}
+                    <ArrowRight
+                      size={16}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                  </Link>
+                ) : (
+                  <a
+                    className="contact-support-link"
+                    href={href}
+                    {...(external
+                      ? { target: "_blank", rel: "noopener noreferrer" }
+                      : {})}
+                  >
+                    {label}{" "}
+                    <ArrowUpRight
+                      size={16}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                    />
+                    {external && (
+                      <span className="sr-only">
+                        {" "}
+                        (Google Maps, opens in a new tab)
+                      </span>
+                    )}
+                  </a>
+                )}
+              </li>
+            ),
+          )}
+        </ol>
       </section>
+    </div>
+  </div>
+);
 
-      <NewsletterBox/>
-    </section>
-  )
-}
-
-export default Contact
+export default Contact;

@@ -3,6 +3,8 @@ import productModel from '../models/productModel.js';
 import orderModel from '../models/orderModel.js';
 import { getAllowedOrderStatuses } from './orderStatus.js';
 import { getInventorySizes } from '../../shared/inventory.js';
+import { cancellationRefund } from './orderRefund.js';
+import { ORDER_FEE_PHP, phpItemsTotal, sumPhp, validPhpAmount } from '../../shared/money.js';
 
 const fail = (message, status) => { throw Object.assign(new Error(message), status ? { status } : {}); };
 const validSize = size => typeof size === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(size) && !['constructor', 'prototype', '__proto__'].includes(size);
@@ -53,7 +55,7 @@ export const createReservedOrder = async (data) => {
             for (const item of requested) {
                 const product = await productModel.findById(item._id).session(session).lean();
                 if (!product) fail('A product in your cart is no longer available.');
-                if (!Number.isFinite(product.price) || product.price < 0) fail(`The price for ${product.name} is unavailable. Contact the administrator.`);
+                if (!validPhpAmount(product.price)) fail(`The price for ${product.name} needs monetary precision review. Contact the administrator.`);
                 if (!product.sizes.includes(item.size)) fail(`Size ${item.size} is not available for ${product.name}.`);
                 const path = `inventory.${item.size}`;
                 const updated = await productModel.updateOne(
@@ -63,7 +65,7 @@ export const createReservedOrder = async (data) => {
                 if (updated.modifiedCount !== 1) fail(`Insufficient stock for ${product.name} — Size ${item.size}. Only ${product.inventory?.[item.size] || 0} remaining.`);
                 items.push({ _id: item._id, name: product.name, image: product.image, price: product.price, category: product.category, subCategory: product.subCategory, size: item.size, quantity: item.quantity });
             }
-            const [order] = await orderModel.create([{ ...data, items, amount: items.reduce((total, item) => total + item.price * item.quantity, 0) + 10, inventoryStatus: 'reserved' }], { session });
+            const [order] = await orderModel.create([{ ...data, items, amount: sumPhp(phpItemsTotal(items), ORDER_FEE_PHP), inventoryStatus: 'reserved' }], { session });
             return order;
         });
     } catch (error) {
@@ -80,15 +82,16 @@ export const cancelReservedOrder = async (orderId, { userId, paymentMethod, unpa
     mongoose.connection.transaction(async session => {
         if (source === 'customer' && (typeof userId !== 'string' || !mongoose.isObjectIdOrHexString(userId))) fail('Sign in to cancel your order.', 401);
         const filter = { _id: orderId, ...(userId ? { userId } : {}), ...(paymentMethod ? { paymentMethod } : {}) };
-        const order = await orderModel.findOne(filter).session(session);
+        const order = await orderModel.findOne(filter).session(session).lean();
         if (!order) fail('Order not found.', 404);
         if (order.status === 'Cancelled') return order;
         if (source === 'customer' && order.status !== 'Order Placed') fail('This order can no longer be cancelled because it has already been approved or progressed.', 409);
         if (!getAllowedOrderStatuses(order).includes('Cancelled') || (unpaidOnly && order.payment) || (expectedStatus !== undefined && (order.status !== expectedStatus || order.payment !== expectedPayment))) fail('This order can no longer be cancelled. Refresh its status.', 409);
+        const refund = cancellationRefund(order);
         // Lock the eligible order transition and inventory release in one transaction.
         const cancelled = await orderModel.findOneAndUpdate(
             { ...filter, status: order.status, payment: order.payment, inventoryStatus: order.inventoryStatus ?? { $exists: false } },
-            { $set: { status: 'Cancelled', ...(source ? { cancellationSource: source } : {}), ...(order.inventoryStatus === 'reserved' ? { inventoryStatus: 'released' } : {}) } },
+            { $set: { status: 'Cancelled', ...(refund ? { refund } : {}), ...(source ? { cancellationSource: source } : {}), ...(order.inventoryStatus === 'reserved' ? { inventoryStatus: 'released' } : {}) } },
             { session, returnDocument: 'after', runValidators: true }
         );
         if (!cancelled) fail('This order changed. Refresh your orders and try again.', 409);

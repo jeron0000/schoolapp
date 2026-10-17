@@ -1,11 +1,16 @@
 import axios from 'axios'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { backendUrl, currency } from '../utils/config'
 import CashierTable from '../components/CashierTable'
 import PaymentDetails from '../components/PaymentDetails'
 import { orderName } from '../utils/orderPresentation'
+import CashierPaymentInspector from '../components/CashierPaymentInspector'
+import { ArrowRight, RefreshCw, Search } from 'lucide-react'
+import './CashierPayments.css'
+import './CashierTransactions.css'
+import './CashierReceipts.css'
 
 const filters = [
   ['Awaiting Payment', order => order.status === 'Sent to Cashier' && order.payment === false],
@@ -15,7 +20,7 @@ const filters = [
 ]
 
 const Cashier = ({ token, title, filter, onFilterChange }) => {
-  const { state } = useLocation()
+  const { state, key: viewKey } = useLocation()
   const [orders, setOrders] = useState([])
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(() => typeof state?.paymentOrderId === 'string' ? state.paymentOrderId : null)
@@ -24,6 +29,26 @@ const Cashier = ({ token, title, filter, onFilterChange }) => {
   const [error, setError] = useState('')
   const requestId = useRef(0)
   const paying = useRef(false)
+  const mutationScope = useRef(null)
+  const pendingFocus = useRef(null)
+
+  const cancelPendingFocus = useCallback(() => {
+    if (!pendingFocus.current) return
+    window.clearTimeout(pendingFocus.current.timer)
+    pendingFocus.current = null
+  }, [])
+
+  useLayoutEffect(() => {
+    if (pendingFocus.current && pendingFocus.current.orderId !== selectedId) cancelPendingFocus()
+  }, [selectedId, cancelPendingFocus])
+
+  useLayoutEffect(() => () => cancelPendingFocus(), [token, viewKey, filter, cancelPendingFocus])
+
+  useLayoutEffect(() => {
+    const scope = { token, viewKey, filter, active: true }
+    mutationScope.current = scope
+    return () => { scope.active = false }
+  }, [token, viewKey, filter])
 
   const refresh = useCallback(async () => {
     const request = ++requestId.current
@@ -49,24 +74,29 @@ const Cashier = ({ token, title, filter, onFilterChange }) => {
   }, [refresh])
 
   const confirmPayment = async (orderId, fields) => {
+    const scope = mutationScope.current
+    if (!scope?.active || scope.token !== token || scope.viewKey !== viewKey || scope.filter !== filter) return
     if (paying.current) return
     paying.current = true
     setPending(true)
     setError('')
     try {
       const { data } = await axios.post(backendUrl + '/api/order/cashier/confirm', { orderId, ...fields }, { headers: { token } })
+      if (!scope.active) return
       if (!data.success || !data.order) throw new Error(data.message || 'Unable to confirm payment.')
       setOrders(current => current.map(order => order._id === data.order._id ? data.order : order))
       onFilterChange('Paid')
       setQuery('')
       toast.success(data.message)
     } catch (error) {
+      if (!scope.active) return
       const message = error.response?.data?.message || error.message
       setError(message)
       toast.error(message)
     } finally {
       paying.current = false
-      setPending(false)
+      // Release this request's busy state only while this instance is mounted.
+      if (mutationScope.current?.active) setPending(false)
     }
   }
 
@@ -75,13 +105,133 @@ const Cashier = ({ token, title, filter, onFilterChange }) => {
   const visibleOrders = orders.filter(order => predicate(order) && `${order._id} ${orderName(order)} ${order.receiptNumber || ''}`.toLowerCase().includes(search))
   const selected = orders.find(order => order._id === selectedId)
   const view = id => {
+    cancelPendingFocus()
     setSelectedId(id)
-    if (window.innerWidth < 1280) window.setTimeout(() => {
+    if (window.innerWidth >= 1280) return
+    const request = { orderId: id, timer: null }
+    request.timer = window.setTimeout(() => {
+      if (pendingFocus.current !== request) return
+      pendingFocus.current = null
       const panel = document.getElementById('payment-details')
       panel?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
       panel?.focus({ preventScroll: true })
     }, 0)
+    pendingFocus.current = request
   }
+
+  if (filter === 'Transactions') return (
+    <section className='cashier-payments-v2 cashier-transactions-v2' aria-labelledby='cashier-transactions-heading'>
+      <header className='cashier-payments-heading'>
+        <div>
+          <p className='cashier-payments-eyebrow'>Cashier / Financial records</p>
+          <div className='cashier-payments-title'><h1 id='cashier-transactions-heading'>Transactions</h1><p>Review and track recorded payment transactions.</p></div>
+        </div>
+        <div className='cashier-payments-search'>
+          <label><span className='sr-only'>Search order ID, student name or receipt number</span><Search size={18} aria-hidden='true' /><input type='search' value={query} disabled={pending} onChange={event => { setQuery(event.target.value); setSelectedId(null) }} placeholder='Search order, student, receipt…' /></label>
+          <button type='button' onClick={refresh} disabled={loading || pending}><RefreshCw size={16} aria-hidden='true' />Refresh</button>
+        </div>
+      </header>
+      <aside className='cashier-transactions-notice'>
+        <div><h2>Confirmed transaction ledger</h2><p>Review-only history of recorded payments. To process payments, use the Payments workspace.</p></div>
+        <span>{loading ? 'Loading…' : error ? 'Records unavailable' : `${orders.filter(predicate).length} recorded`}</span>
+      </aside>
+      {error && !selected && <p role='alert' className='cashier-payments-error'>{error}</p>}
+      <div className='cashier-payments-master-detail'>
+        <CashierTable orders={visibleOrders} filter={filter} selectedId={selectedId} loading={loading} pending={pending} onView={view} v2 query={query} error={error} />
+        {selected
+          ? <CashierPaymentInspector key={selectedId} pending={pending || loading} onClose={() => setSelectedId(null)} label='Transaction Details'>
+              <PaymentDetails key={selectedId} order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} error={error} v2 transaction />
+            </CashierPaymentInspector>
+          : <PaymentDetails order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} v2 transaction />}
+      </div>
+      <p className='cashier-payments-footnote'>Ledger review is read-only. Payment confirmation belongs to Payments; receipts remain accessible through Receipt Records.</p>
+    </section>
+  )
+
+  if (filter === 'Receipt Records') return (
+    <section className='cashier-payments-v2 cashier-receipts-v2' aria-labelledby='cashier-receipts-heading'>
+      <header className='cashier-payments-heading'>
+        <div>
+          <p className='cashier-payments-eyebrow'>Cashier / Payment documentation</p>
+          <div className='cashier-payments-title'>
+            <h1 id='cashier-receipts-heading'>Receipt Records</h1>
+            <p>Find and review recorded official receipt information.</p>
+          </div>
+        </div>
+        <div className='cashier-payments-search'>
+          <label>
+            <span className='sr-only'>Search receipt number, student name or order ID</span>
+            <Search size={18} aria-hidden='true' />
+            <input type='search' value={query} disabled={pending} onChange={event => { setQuery(event.target.value); setSelectedId(null) }} placeholder='Search receipt, student, order…' />
+          </label>
+          <button id='cashier-payments-refresh' type='button' onClick={refresh} disabled={loading || pending}><RefreshCw size={16} aria-hidden='true' />Refresh</button>
+        </div>
+      </header>
+      <section className='cashier-receipts-notice' aria-label='Official receipt directory'>
+        <div><h2>Official receipt directory</h2><p>Review receipt numbers and the original confirmed payments. No new receipt is generated from this screen.</p></div>
+        <span>{loading ? 'Loading records…' : error ? 'Records unavailable' : `${orders.filter(predicate).length} records`}</span>
+      </section>
+      {error && !selected && <p role='alert' className='cashier-payments-error'>{error}</p>}
+      <div className='cashier-payments-master-detail'>
+        <CashierTable orders={visibleOrders} filter={filter} selectedId={selectedId} loading={loading} pending={pending} onView={view} currency={currency} v2 query={query} error={error} />
+        {selected
+          ? <CashierPaymentInspector key={selectedId} pending={pending || loading} onClose={() => setSelectedId(null)} label='Receipt Details'>
+              <PaymentDetails key={selectedId} order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} error={error} v2 receiptRecord />
+            </CashierPaymentInspector>
+          : <PaymentDetails order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} v2 receiptRecord />}
+      </div>
+      <p className='cashier-payments-footnote'>Receipt record review only. Payment confirmation remains in Payments.</p>
+    </section>
+  )
+
+  const paymentsV2 = filter === 'Awaiting Payment' || filter === 'Paid'
+  if (paymentsV2) return (
+    <section className='cashier-payments-v2' aria-labelledby='cashier-payments-heading'>
+      <header className='cashier-payments-heading'>
+        <div>
+          <p className='cashier-payments-eyebrow'>Cashier / Payment processing</p>
+          <div className='cashier-payments-title'>
+            <h1 id='cashier-payments-heading'>Payments</h1>
+            <p>Review orders awaiting confirmation and confirmed student payments.</p>
+          </div>
+        </div>
+        <div className='cashier-payments-search'>
+          <label>
+            <span className='sr-only'>Search order ID, student name or receipt number</span>
+            <Search size={18} aria-hidden='true' />
+            <input type='search' value={query} disabled={pending} onChange={event => { setQuery(event.target.value); setSelectedId(null) }} placeholder='Search order, student, receipt…' />
+          </label>
+          <button id='cashier-payments-refresh' type='button' onClick={refresh} disabled={loading || pending}><RefreshCw size={16} aria-hidden='true' />Refresh</button>
+        </div>
+      </header>
+      <div className='cashier-payments-navigation'>
+        <div className='cashier-payments-workflow'>
+          <h2>Payment workflow</h2>
+          <div role='group' aria-label='Filter payments'>
+            {filters.slice(0, 2).map(([label, matches]) => (
+              <button key={label} type='button' aria-pressed={filter === label} disabled={pending} onClick={() => { onFilterChange(label); setSelectedId(null) }}>
+                {label}<span>{loading ? '—' : orders.filter(matches).length}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <nav aria-label='Other Cashier workspaces' className='cashier-payments-workspaces'>
+          <h2>Record workspaces</h2>
+          <div><Link to='/cashier/transactions'>Transactions<ArrowRight size={14} aria-hidden='true' /></Link><Link to='/cashier/receipts'>Receipt Records<ArrowRight size={14} aria-hidden='true' /></Link></div>
+        </nav>
+      </div>
+      {error && !selected && <p role='alert' className='cashier-payments-error'>{error}</p>}
+      <div className='cashier-payments-master-detail'>
+        <CashierTable orders={visibleOrders} filter={filter} selectedId={selectedId} loading={loading} pending={pending} onView={view} currency={currency} v2 query={query} error={error} />
+        {selected
+          ? <CashierPaymentInspector key={selectedId} pending={pending || loading} onClose={() => setSelectedId(null)}>
+              <PaymentDetails key={selectedId} order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} error={error} v2 />
+            </CashierPaymentInspector>
+          : <PaymentDetails order={selected} pending={pending || loading} currency={currency} onConfirm={confirmPayment} onClose={() => setSelectedId(null)} v2 />}
+      </div>
+      <p className='cashier-payments-footnote'>Confirmed payments are read-only in this view. Payment status and fulfillment status are separate backend-authoritative facts.</p>
+    </section>
+  )
 
   return (
     <section className='min-w-0 text-slate-600 dark:text-slate-400'>

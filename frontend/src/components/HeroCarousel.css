@@ -30,24 +30,6 @@
   .hero-carousel-outgoing { animation: none; }
 }
 
-@media (min-width: 1024px) {
-  .hero .hero-copy {
-    width: 42%;
-    min-height: clamp(32rem, 38vw, 42rem);
-    padding: 3rem 2rem 6rem clamp(2.5rem, 5.5vw, 6rem);
-  }
-
-  .hero .hero-media {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;
-    width: 66%;
-    aspect-ratio: auto;
-    clip-path: polygon(12% 0, 100% 0, 100% 100%, 0 100%);
-  }
-}
-
 .hero-carousel-button {
   position: absolute;
   z-index: 20;
@@ -79,8 +61,8 @@
 }
 
 .hero-carousel-previous {
-  /* The 12% diagonal reaches 6% at the image midpoint. Keep focus inside it. */
-  left: calc(6% + 1rem);
+  /* Clear the Home V3 diagonal and keep the arrow focus ring inside the photo. */
+  left: calc(8% + 1rem);
 }
 
 .hero-carousel-next {
@@ -184,7 +166,7 @@
 .hero-carousel-dot-button[aria-current='true'] .hero-carousel-dot {
   width: 9px;
   height: 9px;
-  background: #fbbf24;
+  background: var(--pamo-color-brand-yellow, #ffd100);
 }
 
 @media (min-width: 1025px) {

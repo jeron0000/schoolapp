@@ -1,11 +1,24 @@
-import React, { useContext } from 'react'
-import { ShopContext } from '../context/shopContext';
+import React from 'react'
+import { formatPhp } from '../../../shared/money.js';
 import { Link } from 'react-router-dom';
+import { ArrowUpRight } from 'lucide-react';
 
 
-const ProductItem = ({id,image,name,price,compact = false}) => {
+const ProductItem = ({id,image,name,price,category,subCategory,compact = false,home = false,collection = false}) => {
   
-    const {currency} = useContext(ShopContext);
+    const cardPrefix = collection ? 'collection' : 'home';
+    if (home || collection) return (
+      <Link className={`${cardPrefix}-product-card`} to={`/product/${id}`}>
+        <div className={`${cardPrefix}-product-photo`}>
+          {image?.[0] ? <img src={image[0]} alt={name} loading='lazy'/> : <span>Image unavailable</span>}
+        </div>
+        <div className={`${cardPrefix}-product-copy`}>
+          <p className={`${cardPrefix}-product-category`}>{(collection ? [category, subCategory] : [subCategory, category]).filter(Boolean).join(collection ? ' · ' : ' / ') || (collection ? 'School merchandise' : 'School essentials')}</p>
+          <h3>{name}</h3>
+          <div className={`${cardPrefix}-product-details`}><p>{formatPhp(price)}</p><span>View details <ArrowUpRight className='storefront-action-icon' size={18} strokeWidth={1.75} aria-hidden='true' /></span></div>
+        </div>
+      </Link>
+    )
     
 
     return (
@@ -16,7 +29,7 @@ const ProductItem = ({id,image,name,price,compact = false}) => {
       </div>
       <div className={compact ? 'min-w-0 flex-1' : 'px-1 pb-2 pt-4'}>
         <h3 className={'text-sm font-medium leading-5 group-hover:text-slate-600 dark:group-hover:text-slate-400 ' + (compact ? 'break-words' : 'min-h-10')}>{name}</h3>
-        <p className='mt-2 break-words text-sm font-bold text-slate-900 sm:text-base dark:text-slate-100'>{currency}{compact ? Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : price}</p>
+        <p className='mt-2 break-words text-sm font-bold text-slate-900 sm:text-base dark:text-slate-100'>{formatPhp(price)}</p>
       </div>
     </Link>
   )

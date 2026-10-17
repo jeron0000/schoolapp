@@ -43,7 +43,7 @@ const CollectionTooltip = ({ active, payload, granularity, formatCurrency }) => 
   </div>
 }
 
-const CollectionOverviewChart = ({ status, data, complete, formatCurrency }) => {
+const CollectionOverviewChart = ({ status, data, complete, formatCurrency, rangeLabel = 'this period' }) => {
   const { theme } = useTheme()
   const [compact, setCompact] = useState(true)
   const valid = typeof complete === 'boolean' && validTrend(data)
@@ -51,7 +51,7 @@ const CollectionOverviewChart = ({ status, data, complete, formatCurrency }) => 
   if (status === 'loading') message = 'Loading collections…'
   else if (status !== 'success' || !valid) message = 'Collection data unavailable.'
   else if (!data.points.some(point => point.amount > 0)) message = complete
-    ? 'No collections recorded for this period.' : 'No dated collections recorded in the available data.'
+    ? `No collections for ${rangeLabel}.` : 'No dated collections recorded in the available data.'
 
   let qualityNote
   if (status === 'success' && valid) {
@@ -59,15 +59,17 @@ const CollectionOverviewChart = ({ status, data, complete, formatCurrency }) => 
     else if (!complete) qualityNote = 'Collection data for this period is incomplete.'
   }
 
-  if (message) return <div role='status' aria-busy={status === 'loading'} className='flex min-h-40 min-w-0 flex-1 flex-col items-center justify-center gap-2 py-6 sm:min-h-48'>
+  if (message) return <div role='status' aria-busy={status === 'loading'} data-empty={status === 'success' && valid ? '' : undefined} className='cashier-dashboard-empty flex min-h-40 min-w-0 flex-1 flex-col items-center justify-center gap-2 py-6 sm:min-h-48'>
+    {status === 'success' && valid && <span aria-hidden='true' className='cashier-dashboard-empty-symbol'>—</span>}
     <p className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>{message}</p>
     {qualityNote && <p className='max-w-xs text-center text-xs leading-5 text-slate-500 dark:text-slate-400'>{qualityNote}</p>}
+    {status === 'success' && valid && !qualityNote && <p className='cashier-dashboard-empty-detail'>This space displays your payment trend once recorded payments exist.</p>}
   </div>
 
   const dark = theme === 'dark'
-  const accent = dark ? '#fbbf24' : '#d97706'
+  const accent = dark ? '#ffd100' : '#d97706'
   const muted = dark ? '#94a3b8' : '#64748b'
-  const grid = dark ? '#1e293b' : '#e2e8f0'
+  const grid = dark ? '#334155' : '#e2e8f0'
   const chartLabel = `Collected amount by ${data.granularity} (Asia/Manila)`
 
   return <figure aria-labelledby='cashier-collection-heading' className='min-h-40 min-w-0 flex-1 pt-4 sm:min-h-48'>

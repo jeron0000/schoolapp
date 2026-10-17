@@ -3,8 +3,11 @@ import HeroImageItem from '../components/HeroImageItem'
 import HeroImageForm from '../components/HeroImageForm'
 import HeroDeleteConfirmation from '../components/HeroDeleteConfirmation'
 import useHeroImages from '../hooks/useHeroImages'
+import { Link } from 'react-router-dom'
+import { Plus } from 'lucide-react'
+import './HeroImages.css'
 
-const primaryClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:opacity-50'
+const primaryClass = 'hero-manager-primary'
 const HeroImages = ({ token }) => {
   const manager = useHeroImages(token)
   const [form, setForm] = useState(null)
@@ -25,27 +28,32 @@ const HeroImages = ({ token }) => {
   }
 
   return (
-    <section aria-labelledby='hero-images-heading' className='mx-auto min-w-0 max-w-[1280px] space-y-5 text-slate-600 dark:text-slate-400'>
-      <header className='flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center'>
-        <div className='min-w-0 border-l-4 border-amber-400 pl-4'>
-          <h1 id='hero-images-heading' className='text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-slate-100'>Hero Images</h1>
-          <p className='mt-1 text-sm leading-6'>Manage the images shown in the storefront hero.</p>
+    <section aria-labelledby='hero-images-heading' className='pamo-hero-manager'>
+      <nav className='hero-manager-breadcrumb' aria-label='Breadcrumb'>
+        <Link to='/dashboard'>Admin</Link><span aria-hidden='true'>/</span><span>Storefront content</span><span aria-hidden='true'>/</span><span aria-current='page'>Hero Images</span>
+      </nav>
+      <header className='hero-manager-heading'>
+        <div>
+          <h1 id='hero-images-heading'>Hero Images</h1>
+          <p>Manage the photographs displayed in the storefront hero.</p>
         </div>
-        <button type='button' disabled={disabled} onClick={() => setForm({ image: null })} className={primaryClass + ' shrink-0'}><span aria-hidden='true'>+</span>Add Hero Image</button>
+        <button id='hero-manager-add' type='button' disabled={disabled} onClick={() => setForm({ image: null })} className={primaryClass}><Plus size={18} aria-hidden='true' />Add Hero Image</button>
       </header>
-      <p className='text-xs leading-5'>Active images are eligible for the storefront carousel. Inactive images remain in Admin.</p>
-      {manager.notice && <p role={manager.notice.ok ? 'status' : 'alert'} className={'break-words text-sm leading-6 ' + (manager.notice.ok ? 'text-slate-700 dark:text-slate-300' : 'text-red-600 dark:text-red-400')}>{manager.notice.message}</p>}
-      {manager.status === 'loading' && <p role='status' className='rounded-lg border border-slate-200 bg-white p-6 text-center text-sm dark:border-slate-800 dark:bg-slate-900/60'>Loading hero images…</p>}
-      {manager.status === 'error' && <div role='alert' className='rounded-lg border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900/60'>
-        <p className='break-words text-sm leading-6'>{manager.error}</p>
+      <div className='hero-manager-visibility-note'><h2>Storefront visibility</h2><p>Active images are eligible for the storefront carousel. Inactive images remain saved here.</p></div>
+      {manager.notice && <p role={manager.notice.ok ? 'status' : 'alert'} className={manager.notice.ok ? 'hero-manager-feedback' : 'hero-manager-error'}>{manager.notice.message}</p>}
+      {manager.status === 'loading' && <p role='status' className='hero-manager-empty'>Loading hero images…</p>}
+      {manager.status === 'error' && <div role='alert' className='hero-manager-empty'>
+        <p>{manager.error}</p>
         <button type='button' onClick={manager.refresh} disabled={manager.busy} className={primaryClass + ' mt-4'}>Try again</button>
       </div>}
-      {manager.status === 'ready' && (manager.images.length ? <ul aria-label='Managed hero images' aria-busy={manager.busy} className='space-y-3'>
+      {manager.status === 'ready' && <div className='hero-manager-list-summary'><p>{manager.images.length} uploaded {manager.images.length === 1 ? 'image' : 'images'}</p><span>Arranged in carousel display order</span></div>}
+      {manager.status === 'ready' && (manager.images.length ? <ul aria-label='Managed hero images' aria-busy={manager.busy} className='hero-manager-list'>
         {manager.images.map((image, index) => <HeroImageItem key={image._id} image={image} index={index} total={manager.images.length} disabled={disabled} onMove={manager.move} onEdit={image => setForm({ image })} onActiveChange={(id, isActive) => manager.update(id, { isActive })} onDelete={setDeleting} />)}
-      </ul> : <div className='rounded-lg border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900/60'>
-        <h2 className='font-semibold text-slate-950 dark:text-slate-100'>No hero images have been added yet.</h2>
+      </ul> : <div className='hero-manager-empty'>
+        <h2>No hero images have been added yet.</h2>
         <button type='button' disabled={disabled} onClick={() => setForm({ image: null })} className={primaryClass + ' mt-4'}>Add Hero Image</button>
       </div>)}
+      <p className='hero-manager-list-note'>Use Up/Down to rearrange slides. Image visibility and saved order determine carousel content.</p>
       {form && <HeroImageForm image={form.image} busy={manager.busy} unavailable={manager.status === 'error' || Boolean(form.image && (!currentEdit || currentEdit.deletionPending))} onClose={() => setForm(null)} onSave={save} />}
       {deleting && <HeroDeleteConfirmation image={currentDelete || deleting} busy={manager.busy} unavailable={manager.status === 'error' || !currentDelete} onClose={() => setDeleting(null)} onConfirm={remove} />}
     </section>

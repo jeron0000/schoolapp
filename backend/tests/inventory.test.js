@@ -1,8 +1,9 @@
+import { issueAuthToken } from '../utils/authTokens.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
+import { connectTestDatabase } from './helpers/database.js';
 import productModel from '../models/productModel.js';
 import orderModel from '../models/orderModel.js';
 import userModel from '../models/userModel.js';
@@ -40,49 +41,19 @@ test('stock mutation uses existing admin authorization and rejects student crede
     const route = productRouter.stack.find(layer => layer.route?.path === '/stock').route;
     assert.deepEqual(route.stack.map(layer => layer.handle), [adminAuth, updateStock]);
     process.env.JWT_SECRET = 'inventory-test-only-secret';
-    const token = jwt.sign({ id }, process.env.JWT_SECRET);
+    const token = issueAuthToken(id, 'customer');
     const res = response();
     await adminAuth({ headers: { token } }, res, () => assert.fail('Student must not mutate stock'));
     assert.equal(res.body.success, false);
 });
 
 test('transactional inventory lifecycle on isolated MongoDB database', { skip: process.env.PAMO_INVENTORY_INTEGRATION !== '1', timeout: 180000 }, async t => {
-    // Opt-in only. Uses a fresh database and never writes to the application database.
-    const { default: dotenv } = await import('dotenv');
-    dotenv.config({ quiet: true });
-    const database = 'pamo_inv_test_' + randomUUID().replaceAll('-', '').slice(0, 20);
-    t.after(async () => {
-        try {
-            if (mongoose.connection.readyState === 1) {
-                assert.equal(mongoose.connection.name, database);
-                assert.match(database, /^pamo_inv_test_[a-f0-9]{20}$/);
-                await mongoose.connection.dropDatabase();
-            }
-        } finally {
-            await mongoose.disconnect();
-        }
-    });
-    await mongoose.connect(process.env.MONGODB_URI + '/e-commerce', { dbName: database, serverSelectionTimeoutMS: 10000 });
-    process.env.STRIPE_SECRET_KEY = 'sk_test_inventory_no_network';
-    const Stripe = (await import('stripe')).default;
-    const paypal = (await import('@paypal/checkout-server-sdk')).default;
-    const stripeResource = new Stripe('sk_test_inventory_no_network').checkout.sessions;
-    t.mock.method(Object.getPrototypeOf(stripeResource), 'create', async (body, options) => {
-        assert(options.idempotencyKey);
-        assert.equal(body.line_items[0].price_data.unit_amount, 22500);
-        assert(body.line_items.every(item => item.price_data.currency === 'php'));
-        return { url: 'https://example.test/stripe' };
-    });
-    t.mock.method(paypal.core.PayPalHttpClient.prototype, 'execute', async request => {
-        assert(request.headers['PayPal-Request-Id']);
-        assert.equal(request.body.purchase_units[0].amount.currency_code, 'USD');
-        return { result: { links: [{ rel: 'approve', href: 'https://example.test/paypal' }] } };
-    });
+    const { database, cleanup } = await connectTestDatabase(t, mongoose, 'inventory');
     const controllers = await import('../controllers/orderController.js');
     const fixture = (stock = 5, sizes = ['M', 'L']) => productModel.create({ name: 'Inventory fixture', description: 'Isolated inventory test', price: 225, image: [], category: 'Men', subCategory: 'BSIT', sizes, inventory: Object.fromEntries(sizes.map(size => [size, size === 'M' ? stock : 0])), date: Date.now() });
     const stock = async (product, size = 'M') => (await productModel.findById(product._id).lean()).inventory?.[size] || 0;
     let user;
-    const data = (product, quantity = 2, method = 'COD') => ({ userId: String(user._id), requestId: randomUUID(), items: [{ _id: String(product._id), size: 'M', quantity, price: 1 }], address: { firstName: 'Inventory test' }, amount: 1, paymentMethod: method, payment: false, date: Date.now() });
+    const data = (product, quantity = 2, method = 'COD') => ({ userId: String(user._id), requestId: randomUUID(), items: [{ _id: String(product._id), size: 'M', quantity, price: 1 }], address: { firstName: 'Inventory', lastName: 'Test', email: 'inventory@example.test', phone: '09171234567', street: '123 Campus Road', city: 'Carmona', state: 'Cavite', zipcode: '4116', country: 'Philippines' }, amount: 1, paymentMethod: method, payment: false, date: Date.now() });
     const call = async (handler, body) => { const res = response(); await handler({ body, headers: { origin: 'http://localhost:5173' }, staff: { identity: 'inventory-test' } }, res); return res; };
     try {
         user = await userModel.create({ name: 'Inventory test', email: database + '@example.test', password: 'test-only' });
@@ -159,7 +130,7 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
             await new Promise(resolve => server.once('listening', resolve));
             t.after(() => new Promise(resolve => server.close(resolve)));
             const url = `http://127.0.0.1:${server.address().port}/api/order/cancel`;
-            const token = jwt.sign({ id: String(user._id) }, process.env.JWT_SECRET);
+            const token = issueAuthToken(String(user._id), 'customer');
             const post = async (body, credential = token) => {
                 const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(credential ? { token: credential } : {}) }, body: JSON.stringify(body) });
                 return { code: res.status, body: await res.json() };
@@ -170,7 +141,7 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
             request.items = [{ ...request.items[0], quantity: 1 }, { ...request.items[0], quantity: 1 }, { _id: String(first._id), size: 'L', quantity: 1 }, { _id: String(second._id), size: 'M', quantity: 3 }];
             const order = await createReservedOrder(request);
             assert.equal(await stock(first), 8);
-            const foreignToken = jwt.sign({ id: new mongoose.Types.ObjectId().toString() }, process.env.JWT_SECRET);
+            const foreignToken = issueAuthToken(new mongoose.Types.ObjectId().toString(), 'customer');
             const foreign = await post({ orderId: String(order._id), userId: String(user._id) }, foreignToken);
             assert.equal(foreign.code, 404);
             assert.equal((await post({ orderId: String(order._id) }, null)).body.success, false);
@@ -270,57 +241,52 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
             assert.equal(await stock(product), 3);
         });
         for (const [method, place, verify] of [['Stripe', controllers.placeOrderStripe, controllers.verifyStripe], ['PayPal', controllers.placeOrderPaypal, controllers.verifyPaypal]]) {
-            await t.test(`${method} creation/retry/payment confirmation never double-deducts`, async () => {
+            await t.test(`${method} creation and retries are contained before reservation`, async () => {
                 const product = await fixture();
                 const request = data(product, 2, method);
-                assert.equal((await call(place, request)).body.success, true);
-                assert.equal((await call(place, request)).body.success, true);
-                const order = await orderModel.findOne({ requestId: request.requestId });
-                assert.equal(order.paymentCurrency, method === 'Stripe' ? 'PHP' : 'USD');
-                assert.equal(order.paidAt, undefined);
-                const confirmation = { orderId: String(order._id), userId: String(user._id), success: 'true', paidAt: 1, paymentCurrency: 'EUR' };
-                const beforeConfirmation = Date.now();
-                assert.equal((await call(verify, confirmation)).body.success, true);
-                const confirmed = await orderModel.findById(order._id).lean();
-                assert(confirmed.paidAt >= beforeConfirmation && confirmed.paidAt <= Date.now());
-                assert.equal(confirmed.paymentCurrency, order.paymentCurrency);
-                assert.equal(confirmed.amount, order.amount); assert.equal(confirmed.status, order.status);
-                // Distinct local request times and concurrent retries cannot replace the first confirmation.
-                await new Promise(resolve => setTimeout(resolve, 10));
-                const retries = await Promise.all(Array.from({ length: 4 }, () => call(verify, confirmation)));
-                assert(retries.every(result => result.body.success));
-                assert.deepEqual(await orderModel.findById(order._id).lean(), confirmed);
-                assert.equal(await orderModel.countDocuments({ requestId: request.requestId }), 1);
-                assert.equal(await stock(product), 3);
-            });
-            await t.test(`${method} already-paid history keeps missing metadata; persisted payment time is preserved`, async () => {
-                const product = await fixture();
-                for (const paidAt of [undefined, 123456]) {
-                    const historical = await createReservedOrder({ ...data(product, 1, method), payment: true, paidAt });
-                    const before = await orderModel.findById(historical._id).lean();
-                    assert.equal((await call(verify, { orderId: String(historical._id), userId: String(user._id), success: 'true' })).body.success, true);
-                    assert.deepEqual(await orderModel.findById(historical._id).lean(), before);
+                const beforeCart = (await userModel.findById(user._id)).cartData;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const res = await call(place, request);
+                    assert.equal(res.code, 503); assert.equal(res.body.success, false);
                 }
-                const pending = await createReservedOrder({ ...data(product, 1, method), paidAt: 654321 });
-                assert.equal((await call(verify, { orderId: String(pending._id), userId: String(user._id), success: 'true' })).body.success, true);
-                assert.equal((await orderModel.findById(pending._id)).paidAt, 654321);
+                assert.equal(await orderModel.countDocuments({ requestId: request.requestId }), 0);
+                assert.equal(await stock(product), 5);
+                assert.deepEqual((await userModel.findById(user._id)).cartData, beforeCart);
             });
-            await t.test(`${method} cancellation releases once; late verification cannot revive it`, async () => {
+            await t.test(`${method} rejected callbacks preserve pending and paid history exactly`, async () => {
+                const product = await fixture(10);
+                for (const metadata of [{ payment: false }, { payment: true }, { payment: true, paidAt: 123456 }]) {
+                    const order = await createReservedOrder({ ...data(product, 1, method), ...metadata });
+                    const before = await orderModel.findById(order._id).lean();
+                    const beforeStock = await stock(product);
+                    const beforeCart = (await userModel.findById(user._id)).cartData;
+                    for (const success of ['true', 'false', 'true']) {
+                        const res = await call(verify, { orderId: String(order._id), userId: String(user._id), success });
+                        assert.equal(res.code, 503); assert.equal(res.body.success, false);
+                    }
+                    assert.deepEqual(await orderModel.findById(order._id).lean(), before);
+                    assert.equal(await stock(product), beforeStock);
+                    assert.deepEqual((await userModel.findById(user._id)).cartData, beforeCart);
+                }
+            });
+            await t.test(`${method} callback cannot cancel; explicit customer cancellation still releases once`, async () => {
                 const product = await fixture();
                 const order = await createReservedOrder(data(product, 2, method));
                 const request = { orderId: String(order._id), userId: String(user._id), success: 'false' };
-                await call(verify, request); await call(verify, request);
+                assert.equal((await call(verify, request)).code, 503);
+                assert.equal(await stock(product), 3);
+                assert.equal((await orderModel.findById(order._id)).status, 'Order Placed');
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    assert.equal((await call(controllers.cancelCustomerOrder, request)).body.success, true);
+                }
                 assert.equal(await stock(product), 5);
-                assert.equal((await call(verify, { ...request, success: 'true' })).body.success, false);
-                const cancelled = await orderModel.findById(order._id);
-                assert.equal(cancelled.payment, false); assert.equal(cancelled.paidAt, undefined);
+                const before = await orderModel.findById(order._id).lean();
+                assert.equal((await call(verify, { ...request, success: 'true' })).code, 503);
+                assert.deepEqual(await orderModel.findById(order._id).lean(), before);
                 assert.equal(await stock(product), 5);
             });
         }
     } finally {
-        assert.equal(mongoose.connection.name, database);
-        assert.match(database, /^pamo_inv_test_[a-f0-9]{20}$/);
-        await mongoose.connection.dropDatabase();
-        await mongoose.disconnect();
+        await cleanup();
     }
 });

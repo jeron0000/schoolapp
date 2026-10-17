@@ -1,56 +1,100 @@
-import React, { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, ChevronUp, Copy } from 'lucide-react'
 import OrderTimeline from './OrderTimeline'
-import { formatMoney, formatOrderDate, getOrderPresentation, getOrderTotals, statusStyles } from '../utils/orderPresentation'
+import { formatOrderDate, getOrderPresentation, getOrderTotals, statusStyles } from '../utils/orderPresentation'
+import { refundPresentation } from '../../../shared/refund.js'
+import { formatOrderMoney, tryPhpLineTotal } from '../../../shared/money.js'
 
-const OrderItems = ({ items, currency }) => <ul className='grid min-w-0 gap-4 sm:grid-cols-2'>
-  {items.map((item, index) => <li key={`${item._id}-${item.size}-${index}`} className='flex min-w-0 items-start gap-3'>
-    {item.image?.[0] ? <img src={item.image[0]} alt={item.name || 'Ordered product'} className='h-16 w-16 shrink-0 rounded-lg bg-slate-100 object-contain dark:bg-slate-800'/> : <div aria-hidden='true' className='h-16 w-16 shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800'/>}
-    <div className='min-w-0 text-xs leading-5'><p className='break-words font-semibold text-slate-900 dark:text-slate-100'>{item.name || 'Ordered product'}</p><p className='text-slate-600 dark:text-slate-400'>{item.size && `Size: ${item.size} · `}Qty: {item.quantity}</p><p className='font-semibold text-slate-900 dark:text-slate-100'>{formatMoney(item.price, currency)}<span className='sr-only'> each</span></p></div>
-  </li>)}
+const OrderImage = ({ item }) => {
+  const [failed, setFailed] = useState(false)
+  return item.image?.[0] && !failed
+    ? <img src={item.image[0]} alt={item.name || 'Ordered product'} className='order-item-image' onError={() => setFailed(true)} />
+    : <div aria-hidden='true' className='order-item-image' />
+}
+
+const OrderItems = ({ items, order, showLineTotals = false }) => <ul className='order-items'>
+  {items.map((item, index) => {
+    const lineTotal = tryPhpLineTotal(item.price, item.quantity)
+    return <li key={`${item._id}-${item.size}-${index}`}>
+      <OrderImage item={item} />
+      <div className='order-item-info'><p className='order-item-name'>{item.name || 'Ordered product'}</p><p>{item.size && `Size: ${item.size} · `}Qty: {item.quantity ?? 'Unavailable'}</p><p className='order-item-price'>{formatOrderMoney(item.price, order)}<span className='sr-only'> each</span></p>{showLineTotals && <p>Item total: <span className='order-item-price'>{formatOrderMoney(lineTotal, order)}</span></p>}</div>
+    </li>
+  })}
 </ul>
 
-const CustomerOrderDetails = ({ order, currency, id }) => {
+const CustomerOrderDetails = ({ order, onCopy }) => {
   const { subtotal, fee } = getOrderTotals(order)
   const paidAt = order.payment === true ? formatOrderDate(order.paidAt) : null
   const method = order.paymentMethod === 'COD' ? order.payment === true && order.receiptNumber ? 'Cash (School Cashier)' : 'Pay as you claim' : order.paymentMethod
-  return <div id={id} className='mt-5 grid min-w-0 gap-5 border-t border-slate-200 pt-5 text-xs dark:border-slate-800 md:grid-cols-2'>
-    <div><h3 className='mb-3 text-sm font-semibold'>Order totals</h3><dl className='space-y-2'>
-      {[['Subtotal', formatMoney(subtotal, currency)], ['Processing Fee', formatMoney(fee, currency)], ['Total', formatMoney(order.amount, currency)]].map(([label, value]) => <div key={label} className='flex justify-between gap-3'><dt className='text-slate-500 dark:text-slate-400'>{label}</dt><dd className='font-medium text-slate-900 dark:text-slate-100'>{value}</dd></div>)}
+  return <div className='order-details-grid'>
+    <div><h4>Order totals</h4><dl className='order-data'>
+      {[['Subtotal', formatOrderMoney(subtotal, order)], ['Processing Fee', formatOrderMoney(fee, order)], ['Total', formatOrderMoney(order.amount, order)]].map(([label, value]) => <div key={label} className={label === 'Total' ? 'order-grand-total' : undefined}><dt>{label}</dt><dd>{value}</dd></div>)}
     </dl></div>
-    <div><h3 className='mb-3 text-sm font-semibold'>Payment details</h3><dl className='space-y-2'>
-      <div className='flex justify-between gap-3'><dt className='text-slate-500 dark:text-slate-400'>Payment Status</dt><dd className={'font-semibold ' + (order.payment === true ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300')}>{order.payment === true ? 'Paid' : 'Pending'}</dd></div>
-      {method && <div className='flex justify-between gap-3'><dt className='text-slate-500 dark:text-slate-400'>Payment Method</dt><dd className='max-w-[60%] break-words text-right font-medium text-slate-900 dark:text-slate-100'>{method}</dd></div>}
-      {order.payment === true && order.receiptNumber && <div><dt className='text-slate-500 dark:text-slate-400'>Official Receipt Number</dt><dd className='mt-1 break-all font-medium text-slate-900 dark:text-slate-100'>{order.receiptNumber}</dd></div>}
-      {paidAt && <div><dt className='text-slate-500 dark:text-slate-400'>Paid At</dt><dd className='mt-1 text-slate-900 dark:text-slate-100'>{paidAt}</dd></div>}
+    <div><h4>Payment details</h4><dl className='order-data'>
+      <div><dt>Payment Status</dt><dd className={order.payment === true ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>{order.payment === true ? 'Paid' : 'Pending'}</dd></div>
+      {method && <div><dt>Payment Method</dt><dd>{method}</dd></div>}
+      {order.payment === true && order.receiptNumber && <div className='order-receipt'><dt>Official Receipt Number</dt><dd><span>{order.receiptNumber}</span><button type='button' onClick={() => onCopy(order.receiptNumber, 'Receipt number')} className='order-copy' aria-label='Copy official receipt number'><Copy size={14} aria-hidden='true' />Copy</button></dd></div>}
+      {paidAt && <div><dt>Paid At</dt><dd>{paidAt}</dd></div>}
     </dl></div>
-    {(order.items?.length || 0) > 2 && <div className='md:col-span-2'><h3 className='mb-3 text-sm font-semibold'>All ordered items</h3><OrderItems items={order.items} currency={currency}/></div>}
+    {(order.items?.length || 0) > 2 && <div className='order-all-items'><h4>All ordered items</h4><OrderItems items={order.items} order={order} showLineTotals /></div>}
   </div>
 }
 
-const CustomerOrderCard = ({ order, currency, onCancel, cancellationPending }) => {
+const CustomerOrderCard = ({ order, onCancel, cancellationPending }) => {
   const [expanded, setExpanded] = useState(false)
   const [trackingExpanded, setTrackingExpanded] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState('')
+  const copyPending = useRef(false)
+  const detailsButton = useRef(null)
+  const trackingButton = useRef(null)
+  const focusAfterRender = useRef(null)
+  // Disclosure controls move into their panel headers when expanded.
+  useEffect(() => {
+    const target = focusAfterRender.current
+    if (target === 'details') detailsButton.current?.focus()
+    if (target === 'tracking') trackingButton.current?.focus()
+    focusAfterRender.current = null
+  }, [expanded, trackingExpanded])
+  const toggleDetails = () => { focusAfterRender.current = 'details'; setExpanded(current => !current) }
+  const toggleTracking = () => { focusAfterRender.current = 'tracking'; setTrackingExpanded(current => !current) }
+  const copyValue = async (value, label) => {
+    if (copyPending.current) return
+    copyPending.current = true
+    setCopyFeedback('')
+    try {
+      await navigator.clipboard.writeText(String(value))
+      setCopyFeedback(`${label} copied.`)
+    } catch {
+      setCopyFeedback(`Could not copy ${label.toLowerCase()}. Select the text and copy it manually.`)
+    } finally {
+      copyPending.current = false
+    }
+  }
   const presentation = getOrderPresentation(order)
+  const refund = order.refundSummary || refundPresentation(order)
   const items = order.items || []
   const placedAt = formatOrderDate(order.date)
   const detailsId = `order-details-${order._id}`
   const timelineId = `order-progress-${order._id}`
-  return (
-    <article className='min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-900/60' aria-label={'Order ' + order._id}>
-      <div className='flex flex-col justify-between gap-3 sm:flex-row sm:items-start'>
-        <div className='flex min-w-0 items-start gap-3'><svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.5' strokeLinejoin='round' className='mt-0.5 h-6 w-6 shrink-0 text-slate-700 dark:text-slate-300'><path d='m12 2 9 5v10l-9 5-9-5V7Z M3 7l9 5 9-5M12 12v10M7.5 4.5l9 5'/></svg><div className='min-w-0'><h2 className='break-all text-sm font-semibold'>Order #{order._id}</h2><p className='mt-1 text-xs text-slate-500 dark:text-slate-400'>{placedAt ? 'Placed on ' + placedAt : 'Placement date unavailable'}</p></div></div>
-        <div className='flex shrink-0 items-center justify-between gap-5 sm:justify-end'><div><p className='text-[11px] text-slate-500 dark:text-slate-400'>Total</p><p className='text-sm font-bold text-slate-900 dark:text-slate-100'>{formatMoney(order.amount, currency)}</p></div><span className={'inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold ' + statusStyles[presentation.tone]}><span aria-hidden='true' className='h-1.5 w-1.5 shrink-0 rounded-full bg-current'/>{presentation.label}</span></div>
-      </div>
-      <div className='mt-4 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50'><OrderItems items={items.slice(0, 2)} currency={currency}/>{items.length > 2 && <button type='button' onClick={() => setExpanded(true)} aria-controls={detailsId} className='mt-2 min-h-11 text-xs font-medium text-slate-600 underline underline-offset-4 dark:text-slate-300'>+{items.length - 2} more {items.length - 2 === 1 ? 'item' : 'items'}</button>}{!items.length && <p className='text-xs text-slate-500 dark:text-slate-400'>Item details unavailable.</p>}</div>
-      {trackingExpanded && order.status !== 'Cancelled' && <OrderTimeline order={order} id={timelineId}/>}
-      <div className='mt-5 flex flex-col justify-between gap-3 min-[375px]:flex-row min-[375px]:flex-wrap'>
-        <button type='button' aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(current => !current)} className='inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800'>{expanded ? 'Hide Details' : 'View Details'}</button>
-        {order.status === 'Order Placed' && <button type='button' disabled={cancellationPending} onClick={() => onCancel(order)} className='inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500 disabled:opacity-50 dark:border-red-400/40 dark:text-red-400 dark:hover:bg-red-400/10'>Cancel Order</button>}
-        {order.status !== 'Cancelled' && <button type='button' onClick={() => setTrackingExpanded(current => !current)} aria-expanded={trackingExpanded} aria-controls={timelineId} className='inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-500'>{trackingExpanded ? 'Hide Tracking' : 'Track Order'}<svg aria-hidden='true' viewBox='0 0 16 16' fill='none' stroke='currentColor' strokeWidth='1.5' className={'h-3.5 w-3.5' + (trackingExpanded ? ' -rotate-90' : '')}><path d='M3 8h10m-4-4 4 4-4 4'/></svg></button>}
-      </div>
-      {expanded && <CustomerOrderDetails order={order} currency={currency} id={detailsId}/>}
-    </article>
-  )
+  const isTrackingOpen = trackingExpanded && order.status !== 'Cancelled'
+  return <article className={'order-card' + (expanded || isTrackingOpen ? ' is-expanded' : '')} aria-label={'Order ' + order._id}>
+    <div className='order-card-header'>
+      <div className='order-reference'><p className='orders-eyebrow'>Order reference</p><div><h2>{order._id}</h2><button type='button' className='order-copy' onClick={() => copyValue(order._id, 'Order ID')} aria-label={'Copy order ID ' + order._id}><Copy size={14} aria-hidden='true' />Copy ID</button></div><p className='order-placed'>{placedAt ? 'Placed on ' + placedAt : 'Placement date unavailable'}</p></div>
+      <div className='order-summary'><div><p className='order-total-label'>Total</p><p className='order-total'>{formatOrderMoney(order.amount, order)}</p></div><span className={'order-status ' + statusStyles[presentation.tone]}><span aria-hidden='true' />{presentation.label}</span></div>
+    </div>
+    <p className='order-copy-feedback' role='status'>{copyFeedback}</p>
+    {refund && <p className='order-panel-note'><strong>{refund.status}.</strong> {refund.message}</p>}
+    {(expanded || isTrackingOpen) && <div className='order-current-stage'><span>Current stage</span><strong>{order.status === 'Cancelled' ? presentation.label : order.status || 'Status unavailable'}</strong></div>}
+    <div className='order-preview'><OrderItems items={items.slice(0, 2)} order={order} showLineTotals={expanded && items.length <= 2} />{items.length > 2 && !expanded && <button type='button' className='order-more' onClick={toggleDetails} aria-expanded='false' aria-controls={detailsId}>+{items.length - 2} more {items.length - 2 === 1 ? 'item' : 'items'}</button>}{!items.length && <p>Item details unavailable.</p>}</div>
+    {isTrackingOpen && <section className='order-panel' id={timelineId} aria-labelledby={`${timelineId}-heading`}><div className='order-panel-heading'><div><h3 id={`${timelineId}-heading`}>Order tracking</h3><p>Follow the progress of your school essentials.</p></div><button ref={trackingButton} type='button' className='btn-secondary orders-action' onClick={toggleTracking} aria-expanded='true' aria-controls={timelineId}>Hide Tracking<ChevronUp size={14} aria-hidden='true' /></button></div><OrderTimeline order={order} /><p className='order-panel-note'>Dates are shown only for recorded events.</p></section>}
+    {expanded && <section className='order-panel' id={detailsId} aria-labelledby={`${detailsId}-heading`}><div className='order-panel-heading'><div><h3 id={`${detailsId}-heading`}>Order details</h3><p>Your purchased items, totals, and payment information.</p></div><button ref={detailsButton} type='button' className='btn-secondary orders-action' onClick={toggleDetails} aria-expanded='true' aria-controls={detailsId}>Hide Details<ChevronUp size={14} aria-hidden='true' /></button></div><CustomerOrderDetails order={order} onCopy={copyValue} /></section>}
+    <div className='order-card-actions'>
+      {!expanded && <button ref={detailsButton} type='button' className='btn-secondary orders-action' onClick={toggleDetails} aria-expanded='false' aria-controls={detailsId}>View Details</button>}
+      {order.status === 'Order Placed' && <button type='button' className='btn-secondary orders-action orders-danger' disabled={cancellationPending} onClick={() => onCancel(order)}>Cancel Order</button>}
+      {order.status !== 'Cancelled' && !isTrackingOpen && <button ref={trackingButton} type='button' className='btn-secondary orders-action order-track-action' onClick={toggleTracking} aria-expanded='false' aria-controls={timelineId}>Track Order<ArrowRight size={14} aria-hidden='true' /></button>}
+    </div>
+    {order.status !== 'Cancelled' && <p className='order-cancel-note'>{order.status === 'Order Placed' ? 'You can cancel this order before it is approved.' : 'Only orders awaiting approval can be cancelled.'}</p>}
+  </article>
 }
 
 export default CustomerOrderCard

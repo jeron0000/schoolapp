@@ -2,9 +2,10 @@ import React from 'react'
 import { assets } from '../assets/assets'
 import ThemeToggle from './ThemeToggle'
 
-const Navbar = ({setToken, sidebarControls = false}) => {
+const Navbar = ({setToken, sidebarControls = false, dashboard = false}) => {
   return (
-    <div className={'flex items-center py-2 px-[4%] dark:bg-slate-900 ' + (sidebarControls ? 'justify-end' : 'justify-between')}>
+    <div className={'flex items-center py-2 px-[4%] dark:bg-slate-900 ' + (sidebarControls ? 'justify-end' : 'justify-between') + (dashboard ? ' pamo-dashboard-navbar' : '')}>
+        {dashboard && <p className='dashboard-admin-label'>PAMO / Administration</p>}
         {!sidebarControls && <img className='w-20 sm:w-24 md:w-28 object-contain dark:rounded dark:bg-white' src={assets.logo} alt="" />}
         <div className='flex items-center gap-2'>
           <ThemeToggle />

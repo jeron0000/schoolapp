@@ -1,6 +1,6 @@
+import { issueAuthToken } from '../utils/authTokens.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import jwt from 'jsonwebtoken';
 import orderModel from '../models/orderModel.js';
 import authUser from '../middleware/auth.js';
 
@@ -16,12 +16,11 @@ test('customer orders use the authenticated owner and expose only customer order
     t.mock.method(orderModel, 'find', query => {
         assert.deepEqual(query, { userId });
         return { select(fields) {
-            assert.equal(fields, '_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource');
-            assert.ok(!fields.split(' ').includes('confirmedBy'));
-            return Promise.resolve([record]);
+            assert.equal(fields, '_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource refund paymentCurrency confirmedBy stripePayment paypalPayment paymentRecovery');
+            return { lean: async () => [record] };
         } };
     });
-    const req = { headers: { token: jwt.sign({ id: userId }, process.env.JWT_SECRET) }, body: { userId: 'another-student' } };
+    const req = { headers: { token: issueAuthToken(userId, 'customer') }, body: { userId: 'another-student' } };
     let allowed = false;
     await authUser(req, response(), () => { allowed = true; });
     assert.equal(allowed, true);

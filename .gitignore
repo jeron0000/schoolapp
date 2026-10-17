@@ -12,3 +12,29 @@ build/
 coverage/
 *.log
 tempCodeRunnerFile.*
+
+# Current local environment and runtime exclusions (examples remain reviewable).
+node_modules/
+
+# Local environment values stay private; placeholder examples remain reviewable.
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+!*.env.example
+!*.env.*.example
+
+# Backend runtime/debug output is generated, not application source.
+*.log
+tempCodeRunnerFile.*
+
+# Publication-only generated/cache safeguards.
+.cache/
+.vite/
+.parcel-cache/
+*.tsbuildinfo
+tmp/
+temp/
+logs/

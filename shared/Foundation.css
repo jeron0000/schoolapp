@@ -1,0 +1,156 @@
+/* IBM Plex Sans Latin variable font, distributed under assets/fonts/OFL.txt.
+   Source: Google Fonts, IBM Plex Sans v23. One local WOFF2 covers 400–700. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/ibm-plex-sans-latin-variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Semantic status colors: base accents plus readable text/surface pairs. */
+:root {
+  --pamo-color-success: #22c55e;
+  --pamo-color-error: #ef4444;
+  --pamo-color-info: #0ea5e9;
+  --pamo-color-success-text: #15803d;
+  --pamo-color-error-text: #b91c1c;
+  --pamo-color-info-text: #0369a1;
+  --pamo-color-error-surface: #fef2f2;
+  --pamo-color-focus: #b45309;
+}
+.Toastify {
+  --toastify-color-success: var(--pamo-color-success);
+  --toastify-color-error: var(--pamo-color-error);
+  --toastify-color-info: var(--pamo-color-info);
+  --toastify-icon-color-success: var(--pamo-color-success-text);
+  --toastify-icon-color-error: var(--pamo-color-error-text);
+  --toastify-icon-color-info: var(--pamo-color-info-text);
+  --toastify-text-color-success: #020617;
+  --toastify-text-color-error: #020617;
+  --toastify-text-color-info: #020617;
+}
+.dark {
+  --pamo-color-success-text: #22c55e;
+  --pamo-color-error-text: #f87171;
+  --pamo-color-info-text: #0ea5e9;
+  --pamo-color-error-surface: #450a0a;
+  --pamo-color-focus: #ffd100;
+}
+
+/* Shared application palette; layout and typography scopes stay unchanged. */
+.storefront-navbar,
+.home-hero,
+.home-page,
+.home-footer,
+.collection-page,
+.about-page,
+.contact-page,
+.product-page,
+.cart-page,
+.checkout-page,
+.orders-page,
+.shared-login,
+.cashier-dashboard-layout,
+.pamo-dashboard-layout {
+  --pamo-color-surface-default: #fff;
+  --pamo-color-surface-subtle: #f8fafc;
+  --pamo-color-surface-navy: #0f172a;
+  --pamo-color-text-primary: #0f172a;
+  --pamo-color-text-secondary: #475569;
+  --pamo-color-border-default: #e2e8f0;
+  --pamo-color-border-input: #cbd5e1;
+  --pamo-color-brand-yellow: #ffd100;
+  --pamo-color-brand-hover: #ffe04d;
+  --pamo-color-brand-pressed: #d9b200;
+  --pamo-color-accent-text: #b45309;
+  --pamo-layout-max: 1352px;
+  --pamo-target: 44px;
+}
+
+.dark .storefront-navbar,
+.dark .home-hero,
+.dark .home-page,
+.dark .home-footer,
+.dark .collection-page,
+.dark .about-page,
+.dark .contact-page,
+.dark .product-page,
+.dark .cart-page,
+.dark .checkout-page,
+.dark .orders-page,
+.dark .shared-login,
+.dark .cashier-dashboard-layout,
+.dark .pamo-dashboard-layout {
+  --pamo-color-surface-default: #0f172a;
+  --pamo-color-surface-subtle: #1e293b;
+  --pamo-color-surface-navy: #020617;
+  --pamo-color-text-primary: #ffffff;
+  --pamo-color-text-secondary: #94a3b8;
+  --pamo-color-border-default: #334155;
+  --pamo-color-border-input: #334155;
+  --pamo-color-accent-text: #ffd100;
+}
+
+/* Every shared navbar uses the approved storefront geometry, on every route. */
+.storefront-navbar,
+.storefront-home,
+.storefront-collection,
+.storefront-about,
+.storefront-contact,
+.storefront-product,
+.storefront-cart,
+.storefront-checkout,
+.storefront-orders,
+.collection-page,
+.collection-footer,
+.about-page,
+.about-footer,
+.contact-page,
+.contact-footer,
+.product-page,
+.product-footer,
+.cart-page,
+.cart-footer,
+.checkout-page,
+.checkout-footer,
+.orders-page,
+.orders-footer,
+.shared-login,
+.home-page,
+.home-hero {
+  --pamo-layout-max: clamp(1352px, calc(100vw - 160px), 1600px);
+  --pamo-home-gutter: clamp(48px, 6.112vw, 88px);
+}
+
+/* Preserve the existing route-specific typography independently of width. */
+.storefront-home,
+.storefront-collection,
+.storefront-about,
+.storefront-contact,
+.storefront-product,
+.storefront-cart,
+.storefront-checkout,
+.storefront-orders,
+.collection-page,
+.collection-footer,
+.about-page,
+.about-footer,
+.contact-page,
+.contact-footer,
+.product-page,
+.product-footer,
+.cart-page,
+.cart-footer,
+.checkout-page,
+.checkout-footer,
+.orders-page,
+.orders-footer,
+.shared-login,
+.home-page,
+.home-hero,
+.pamo-dashboard-layout {
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+

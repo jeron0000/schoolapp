@@ -1,25 +1,18 @@
-import jwt from 'jsonwebtoken'
+import { verifyAuthToken, rejectSession } from '../utils/authTokens.js';
 
 const authUser = async (req, res, next) => {
-
-
-    const { token } = req.headers;
-
-    if (!token) {
-        return res.json({success: false, message: 'Not Authorized Login Again' })
-    }
-
+    let claims;
     try {
-        
-        const token_decode = jwt.verify(token, process.env.JWT_SECRET)
-        req.body.userId = token_decode.id 
-        next()
-
-    } catch (error) {
-        console.log(error);
-        res.json({success: false, message: error.message})
+        claims = verifyAuthToken(req.headers.token);
+    } catch {
+        return rejectSession(res);
     }
+    if (claims.role !== 'customer') {
+        return res.status(403).json({ success: false, message: 'Customer access required.' });
+    }
+    req.body = req.body || {};
+    req.body.userId = claims.sub;
+    next();
+};
 
-}
-
-export default authUser
+export default authUser;

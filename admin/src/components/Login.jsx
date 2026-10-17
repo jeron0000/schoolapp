@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import { backendUrl } from '../utils/config'
 import { assets } from '../assets/assets'
 import ThemeToggle from './ThemeToggle'
+import '../../../shared/Foundation.css'
 import LoginFlow from '../../../shared/LoginFlow'
 import { adminPanelFromSearch, loginDestination } from '../../../shared/loginNavigation'
 

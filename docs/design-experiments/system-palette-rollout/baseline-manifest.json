@@ -1,0 +1,117 @@
+[
+  {
+    "path": "frontend/src/components/HeroCarousel.css",
+    "sha256": "3180c875bc7831b4a8229f61d97da186eda72504a23696fcad2de40ed73f3398",
+    "bytes": 3888
+  },
+  {
+    "path": "frontend/src/components/HomePage.css",
+    "sha256": "0777bf724d596242fdfb4b4a284236c17f17ab3f4c2a0fcd7e469e6ef540da65",
+    "bytes": 30121
+  },
+  {
+    "path": "frontend/src/components/StorefrontFoundation.css",
+    "sha256": "c64c770b6b721c4499af4168548a1dce7691fdb4c7eafdc27127fd696c567b95",
+    "bytes": 12872
+  },
+  {
+    "path": "frontend/src/index.css",
+    "sha256": "4fadf89b329d9e4704cbd14403ff1814aa2e4e2f43e57711c92247b180948cac",
+    "bytes": 3594
+  },
+  {
+    "path": "frontend/src/pages/Cart.css",
+    "sha256": "6cb7ab847ff9a254fd3c8dc5e767ded0f6d9600189ecf4541a2f20c1ee01d216",
+    "bytes": 15681
+  },
+  {
+    "path": "frontend/src/pages/Orders.css",
+    "sha256": "d92348462527b16fc8cbd34b29e58a6cd002f1fff0c9e90e5b0056af8425fee4",
+    "bytes": 15150
+  },
+  {
+    "path": "frontend/src/pages/PlaceOrder.css",
+    "sha256": "6b35e261dc822f3d914bb2d59e635ddcd00be47f5527fdc6cbd5ebf16ce78e77",
+    "bytes": 15766
+  },
+  {
+    "path": "frontend/src/pages/Product.css",
+    "sha256": "67bada8a2053e50537c42db561fbca5b948e85391588f45b8e93fe65ddd5e836",
+    "bytes": 16789
+  },
+  {
+    "path": "admin/src/components/StockManagementDrawer.css",
+    "sha256": "dced5aada3f344f856ba3c510a8ac4933dc0fea8961ebba1edd7e8bed58808fa",
+    "bytes": 7080
+  },
+  {
+    "path": "admin/src/index.css",
+    "sha256": "6bc59bc55b2af2fe7938162a269d3b38fe7084c1c154d7788f429511c67f11d3",
+    "bytes": 2907
+  },
+  {
+    "path": "admin/src/pages/Add.css",
+    "sha256": "c3b4bbcab9901f3af0337c64b6eadd3818995bac626aa9949c987b31fb89f215",
+    "bytes": 13286
+  },
+  {
+    "path": "admin/src/pages/CashierDashboard.css",
+    "sha256": "8491f8641de3f70717468d30cc36f3fe76431236a3685a16dfcd07dd6d2c31be",
+    "bytes": 13384
+  },
+  {
+    "path": "admin/src/pages/CashierPayments.css",
+    "sha256": "ff228e4cf4ee71a3faa6126383e3484860f3b340660a37c8cce593c554e7faeb",
+    "bytes": 15997
+  },
+  {
+    "path": "admin/src/pages/Dashboard.css",
+    "sha256": "8b1d277f1369e3f55e989369eb23b35a4bbe136e388096d9f4f56aaeb43b2e9f",
+    "bytes": 20492
+  },
+  {
+    "path": "admin/src/pages/HeroImages.css",
+    "sha256": "ad75feb0d5d7485c1ed48e47474a58e2d4c1023e7745d7d369f3ef400da8e20a",
+    "bytes": 15145
+  },
+  {
+    "path": "admin/src/pages/List.css",
+    "sha256": "839f04caefc360798405d396bda459ac6ccb1404f05af00d9229b8f259e8205a",
+    "bytes": 10605
+  },
+  {
+    "path": "admin/src/pages/Orders.css",
+    "sha256": "9f719dc51c462e3a993324bc46604f9bb9e78ac8f4f08a2a99c8311a52b2b8f8",
+    "bytes": 19675
+  },
+  {
+    "path": "shared/Foundation.css",
+    "sha256": "533875c87513666ef63afa9cee91f45482e4aaf4b515730f2ddf4b6defca3fd8",
+    "bytes": 3339
+  },
+  {
+    "path": "shared/LoginFlow.css",
+    "sha256": "d6aed78c5cbd1223ac79ddf5958d797c3c2435e71339ff59c60555cc5cfe07ae",
+    "bytes": 17848
+  },
+  {
+    "path": "frontend/tailwind.config.js",
+    "sha256": "7f8b404b160ef9a5f77a127b5c39fe92f55c8465440d446b1988c5d0679e779b",
+    "bytes": 234
+  },
+  {
+    "path": "admin/tailwind.config.js",
+    "sha256": "6f0a596b3690ed0eab52c0ab22744f090ef8bbde1d65c21d2ce06fd9ff81685e",
+    "bytes": 233
+  },
+  {
+    "path": "admin/src/components/SalesOverviewChart.jsx",
+    "sha256": "4f37bb1b03d0106e9b9df8c0d0638c0750b8f3961ef152538fe78078109a28a1",
+    "bytes": 4360
+  },
+  {
+    "path": "admin/src/components/CollectionOverviewChart.jsx",
+    "sha256": "98daefe259ea1fda874641a66955dc83366702ae2635d67b2a2e789b36e53abf",
+    "bytes": 7104
+  }
+]

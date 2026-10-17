@@ -1,5 +1,8 @@
 import orderModel from '../models/orderModel.js';
 import { cashierDashboardRange, getCashierDashboardOverview } from '../utils/cashierDashboard.js';
+import { refundPresentation } from '../../shared/refund.js';
+import { validPhpAmount } from '../../shared/money.js';
+import { ensureReceiptIndex } from '../utils/receiptIndex.js';
 
 export const cashierDashboardOverview = async (req, res) => {
     let range;
@@ -24,7 +27,7 @@ export const cashierOrders = async (req, res) => {
             { status: 'Sent to Cashier', payment: false },
             { payment: true }
         ] });
-        res.json({ success: true, orders });
+        res.json({ success: true, orders: orders.map(order => ({ ...order.toObject(), refundSummary: refundPresentation(order) })) });
     } catch {
         res.status(500).json({ success: false, message: 'Unable to load cashier orders.' });
     }
@@ -50,17 +53,13 @@ export const confirmCashierPayment = async (req, res) => {
         if (current.paymentMethod !== 'COD') {
             return res.status(409).json({ success: false, message: 'This order uses an online payment provider and cannot be confirmed as cash.' });
         }
-        if (!Number.isFinite(current.amount) || current.amount <= 0) {
-            return res.status(409).json({ success: false, message: 'The stored order total must be greater than zero.' });
+        if (!validPhpAmount(current.amount) || current.amount <= 0 || current.paymentCurrency !== 'PHP') {
+            return res.status(409).json({ success: false, message: 'The stored total must be a positive, exact PHP amount. Historical currency or precision needs review.' });
         }
-        // Ensure uniqueness even where automatic schema indexing is disabled.
-        // Older orders without receipt metadata are excluded from this index.
-        await orderModel.collection.createIndex({ receiptNumber: 1 }, {
-            name: 'cashier_receipt_unique', unique: true,
-            partialFilterExpression: { receiptNumber: { $type: 'string' } }
-        });
+        const assertReceiptIndexReady = await ensureReceiptIndex(orderModel);
+        assertReceiptIndexReady();
         const order = await orderModel.findOneAndUpdate(
-            { _id: orderId, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: current.amount },
+            { _id: orderId, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: current.amount, paymentCurrency: 'PHP' },
             { $set: {
                 payment: true, status: 'Packing', paymentMethod: 'COD',
                 receiptNumber: receiptNumber.trim(), paidAt: Date.now(), confirmedBy: req.staff.identity

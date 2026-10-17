@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { backendUrl } from '../utils/config'
 import { AwaitingPaymentSummary, RecentPaymentsSummary } from '../components/CashierPaymentSummaries'
 import PaymentMethodBreakdown from '../components/PaymentMethodBreakdown'
+import { ArrowRight, Banknote, Check, Clock3, ChartNoAxesCombined } from 'lucide-react'
+import './CashierDashboard.css'
 
 const CollectionOverviewChart = lazy(() => import('../components/CollectionOverviewChart'))
 
@@ -20,22 +22,22 @@ const count = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 0 })
 const loadError = 'Payment summary unavailable.'
 
 const metrics = [
-  { key: 'totalCollected', monetary: true, label: 'Total Collected', caption: 'Selected period', icon: 'M17 5c0 1.7-3.1 3-7 3S3 6.7 3 5s3.1-3 7-3 7 1.3 7 3ZM3 5v5c0 1.7 3.1 3 7 3m7-8v4M3 10v5c0 1.7 3.1 3 7 3M14 11c0 1.1 1.6 2 3.5 2s3.5-.9 3.5-2-1.6-2-3.5-2-3.5.9-3.5 2Zm0 0v5c0 1.1 1.6 2 3.5 2s3.5-.9 3.5-2v-5m-7 5v4c0 1.1 1.6 2 3.5 2s3.5-.9 3.5-2v-4', color: 'text-amber-700 dark:text-amber-400' },
-  { key: 'paidTransactions', label: 'Paid Transactions', caption: 'Selected period', icon: 'M2 3h3l3 13h10l3-10H6M8 16l-1 3h12M10 22h.01M18 22h.01', color: 'text-blue-600 dark:text-blue-400' },
-  { key: 'awaitingPayment', label: 'Awaiting Payment', caption: 'Current payment queue', icon: 'M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0', color: 'text-orange-600 dark:text-orange-400' },
-  { key: 'averageTransaction', monetary: true, label: 'Average Transaction', caption: 'Selected period', icon: 'M4 13h3v8H4ZM10.5 3h3v18h-3ZM17 8h3v13h-3Z', color: 'text-amber-700 dark:text-amber-400' }
+  { key: 'totalCollected', monetary: true, label: 'Total Collected', Icon: Banknote, detail: 'Collected, confirmed payments' },
+  { key: 'paidTransactions', label: 'Paid Transactions', Icon: Check, detail: 'Confirmed transactions' },
+  { key: 'awaitingPayment', label: 'Awaiting Payment', Icon: Clock3, detail: 'Orders needing confirmation' },
+  { key: 'averageTransaction', monetary: true, label: 'Average Transaction', Icon: ChartNoAxesCombined, detail: 'Per confirmed transaction' }
 ]
 
 const CashierDashboardSection = ({ id, title, description, to, actionLabel, children }) => (
-  <section aria-labelledby={id} className='flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'>
-    <header className='flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800'>
-      <div className='min-w-0 flex-1 basis-full sm:basis-auto'>
-        <h2 id={id} className='break-words text-lg font-semibold tracking-tight text-slate-950 sm:text-xl dark:text-slate-100'>{title}</h2>
-        <p className='mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400'>{description}</p>
+  <section aria-labelledby={id} className='cashier-dashboard-panel'>
+    <header>
+      <div>
+        <h2 id={id}>{title}</h2>
+        <p>{description}</p>
       </div>
-      {to && <Link to={to} className='inline-flex min-h-11 max-w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 dark:focus-visible:outline-amber-500 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'>
+      {to && <Link to={to} className='cashier-dashboard-action'>
         {actionLabel}
-        <svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className='h-4 w-4 shrink-0'><path d='M4 12h16m-6-6 6 6-6 6' /></svg>
+        <ArrowRight aria-hidden='true' size={16} />
       </Link>}
     </header>
     {children}
@@ -86,64 +88,86 @@ const CashierDashboard = ({ token, paymentsPath, transactionsPath }) => {
   if (status === 'success') message = overview.complete ? 'Payment periods: Asia/Manila.' : 'Collection figures are incomplete.'
 
   return (
-  <section aria-labelledby='cashier-dashboard-heading' className='mx-auto min-w-0 max-w-screen-2xl space-y-4 sm:space-y-5'>
-    <header className='flex flex-wrap items-start justify-between gap-4'>
-      <div className='min-w-0 flex-1 basis-full xl:basis-auto'>
-        <h1 id='cashier-dashboard-heading' className='break-words text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-slate-100'>Cashier Dashboard</h1>
-        <p className='mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400'>Payments and collections at a glance.</p>
+    <section aria-labelledby='cashier-dashboard-heading' className='cashier-dashboard-v2'>
+      <header className='cashier-dashboard-heading'>
+        <div className='cashier-dashboard-title'>
+          <p className='cashier-dashboard-eyebrow'>Financial overview</p>
+          <div>
+            <h1 id='cashier-dashboard-heading'>Cashier Dashboard</h1>
+            <p>Payments and collections at a glance.</p>
+          </div>
+        </div>
+        <div className='cashier-dashboard-period'>
+          <fieldset aria-describedby='cashier-dashboard-range-note'>
+            <legend>Reporting period</legend>
+            <div className='cashier-dashboard-period-control'>
+              <div className='cashier-dashboard-period-buttons'>
+                {ranges.map(range => <button key={range.key} type='button' aria-pressed={selectedRange === range.key} onClick={() => selectRange(range.key)}>{range.label}</button>)}
+              </div>
+              <p>Asia/Manila · This Year: January 1 through today</p>
+            </div>
+          </fieldset>
+          <p id='cashier-dashboard-range-note' role='status' className='sr-only'>{message}</p>
+        </div>
+      </header>
+
+      {status === 'success' && !overview.complete && <aside className='cashier-dashboard-coverage'>
+        <strong>{selectedRange === 'alltime' ? 'Historical collection data is incomplete' : 'Collection figures are incomplete'}</strong>
+        <p>{selectedRange === 'alltime'
+          ? 'All Time totals only reflect available records; do not treat these figures as verified lifetime collections.'
+          : 'Figures reflect available verified records for this period. Some historical records are incomplete.'}</p>
+      </aside>}
+      {status === 'error' && <p role='alert' className='cashier-dashboard-coverage'>{loadError} Select another reporting period to retry.</p>}
+
+      <div role='list' aria-label='Cashier payment summary' aria-describedby='cashier-dashboard-range-note' aria-busy={status === 'loading'} className='cashier-dashboard-metrics'>
+        {metrics.map(metric => {
+          let value = '—'
+          let caption = status === 'loading' ? 'Loading…' : 'Unavailable'
+          if (status === 'success') {
+            value = (metric.monetary ? peso : count).format(overview.summary[metric.key])
+            caption = metric.key === 'awaitingPayment' ? 'Current queue · not date-filtered' : rangeLabel + (overview.complete ? '' : ' · incomplete')
+          }
+          const Icon = metric.Icon
+          return (
+            <div key={metric.key} role='listitem' className={'cashier-dashboard-metric' + (metric.key === 'awaitingPayment' && status === 'success' && overview.summary.awaitingPayment > 0 ? ' cashier-dashboard-metric-pending' : '')}>
+              <span className='cashier-dashboard-metric-icon'>
+                <Icon aria-hidden='true' size={22} />
+              </span>
+              <dl>
+                <dt>{metric.label}</dt>
+                <dd className='cashier-dashboard-metric-value'>{status === 'success' ? value : <><span aria-hidden='true'>—</span><span className='sr-only'>{caption}</span></>}</dd>
+                <dd className='cashier-dashboard-metric-caption'>{caption}</dd>
+                <dd className='cashier-dashboard-metric-detail'>{metric.detail}</dd>
+              </dl>
+            </div>
+          )
+        })}
       </div>
-      <div className='w-full min-w-0 max-w-full sm:w-auto'>
-        <fieldset aria-describedby='cashier-dashboard-range-note' className='grid min-w-0 grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 min-[480px]:grid-cols-3 sm:grid-cols-5 dark:border-slate-800 dark:bg-slate-900'>
-          <legend className='sr-only'>Time range</legend>
-          {ranges.map(range => <button key={range.key} type='button' aria-pressed={selectedRange === range.key} onClick={() => selectRange(range.key)} className={'min-h-11 min-w-0 rounded-md px-3 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 dark:focus-visible:outline-amber-500 ' + (selectedRange === range.key ? 'bg-amber-400 text-slate-950 hover:bg-amber-300' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800')}>{range.label}</button>)}
-        </fieldset>
-        <p id='cashier-dashboard-range-note' role='status' className='mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400'>{message}</p>
+
+      <div className='cashier-dashboard-charts'>
+        <CashierDashboardSection id='cashier-collection-heading' title='Collection Overview' description='Confirmed payments over the selected period.'>
+          <Suspense fallback={<div role='status' aria-busy='true' className='flex min-h-40 min-w-0 flex-1 items-center justify-center py-6 sm:min-h-48'>
+            <p className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>Loading collections…</p>
+          </div>}>
+            <CollectionOverviewChart status={status} data={overview?.collectionTrend} complete={overview?.trendComplete} formatCurrency={peso.format} rangeLabel={rangeLabel} />
+          </Suspense>
+        </CashierDashboardSection>
+        <CashierDashboardSection id='cashier-methods-heading' title='Payment Methods' description='Distribution of collected payments.'>
+          <PaymentMethodBreakdown status={status} data={overview?.paymentMethodBreakdown} complete={overview?.complete} formatCurrency={peso.format} rangeLabel={rangeLabel} />
+        </CashierDashboardSection>
       </div>
-    </header>
 
-    <div role='list' aria-label='Cashier payment summary' aria-describedby='cashier-dashboard-range-note' aria-busy={status === 'loading'} className='grid min-w-0 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4'>
-      {metrics.map(metric => {
-        let value = '—'
-        let caption = status === 'loading' ? 'Loading…' : 'Unavailable'
-        if (status === 'success') {
-          value = (metric.monetary ? peso : count).format(overview.summary[metric.key])
-          caption = metric.key === 'awaitingPayment' ? metric.caption : rangeLabel
-        }
-        return <div key={metric.key} role='listitem' className='flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:gap-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'>
-        <span className='flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 sm:h-12 sm:w-12 dark:bg-slate-800'>
-          <svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className={'h-6 w-6 ' + metric.color}><path d={metric.icon} /></svg>
-        </span>
-        <dl className='min-w-0 flex-1'>
-          <dt className='break-words text-sm font-medium text-slate-600 dark:text-slate-300'>{metric.label}</dt>
-          <dd className='mt-2 [overflow-wrap:anywhere] text-2xl font-semibold tabular-nums tracking-tight text-slate-950 2xl:text-3xl dark:text-slate-100'>{status === 'success' ? value : <><span aria-hidden='true'>—</span><span className='sr-only'>{caption}</span></>}</dd>
-          <dd className='mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400'>{caption}</dd>
-        </dl>
-      </div>})}
-    </div>
-
-    <div className='grid min-w-0 gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'>
-      <CashierDashboardSection id='cashier-collection-heading' title='Collection Overview' description='Confirmed payments over the selected period.'>
-        <Suspense fallback={<div role='status' aria-busy='true' className='flex min-h-40 min-w-0 flex-1 items-center justify-center py-6 sm:min-h-48'>
-          <p className='max-w-xs text-center text-sm leading-6 text-slate-500 dark:text-slate-400'>Loading collections…</p>
-        </div>}>
-          <CollectionOverviewChart status={status} data={overview?.collectionTrend} complete={overview?.trendComplete} formatCurrency={peso.format} />
-        </Suspense>
-      </CashierDashboardSection>
-      <CashierDashboardSection id='cashier-methods-heading' title='Payment Methods' description='Distribution of collected payments.'>
-        <PaymentMethodBreakdown status={status} data={overview?.paymentMethodBreakdown} complete={overview?.complete} formatCurrency={peso.format} />
-      </CashierDashboardSection>
-    </div>
-
-    <div className='grid min-w-0 gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]'>
-      <CashierDashboardSection id='cashier-awaiting-heading' title='Awaiting Payment' description='Orders waiting for payment confirmation.' to={paymentsPath} actionLabel='View All Payments'>
-        <AwaitingPaymentSummary status={status} payments={overview?.awaitingPayments} paymentsPath={paymentsPath} formatCurrency={peso.format} />
-      </CashierDashboardSection>
-      <CashierDashboardSection id='cashier-recent-heading' title='Recent Payments' description='Latest confirmed payments.' to={transactionsPath} actionLabel='View All Transactions'>
-        <RecentPaymentsSummary status={status} payments={overview?.recentPayments} complete={overview?.complete} formatCurrency={peso.format} />
-      </CashierDashboardSection>
-    </div>
-  </section>
-)
+      <div className='cashier-dashboard-summaries'>
+        <CashierDashboardSection id='cashier-awaiting-heading' title='Awaiting Payment' description='Current orders awaiting payment confirmation.' to={paymentsPath} actionLabel='View All Payments'>
+          <AwaitingPaymentSummary status={status} payments={overview?.awaitingPayments} paymentsPath={paymentsPath} formatCurrency={peso.format} />
+        </CashierDashboardSection>
+        <CashierDashboardSection id='cashier-recent-heading' title='Recent Payments' description={'Latest confirmed payments during ' + rangeLabel + '.'} to={transactionsPath} actionLabel='View Transactions'>
+          <RecentPaymentsSummary status={status} payments={overview?.recentPayments} complete={overview?.complete} formatCurrency={peso.format} rangeLabel={rangeLabel} />
+        </CashierDashboardSection>
+      </div>
+      <p className='cashier-dashboard-footnote'>Financial figures are based on existing verified collection records. No demonstration data is shown.</p>
+    </section>
+  )
 }
 
 export default CashierDashboard

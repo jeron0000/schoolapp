@@ -26,8 +26,8 @@ export const dashboardRange = (key = '30d', now = Date.now()) => {
 
 const storedItems = { $cond: [{ $isArray: '$items' }, '$items', []] };
 const decimal = input => ({ $convert: { input, to: 'decimal', onError: 0, onNull: 0 } });
-// Decimal arithmetic avoids binary-price drift; each historical line is
-// rounded to centavos after multiplying its snapshot price by quantity.
+// Decimal arithmetic avoids binary drift. validItems excludes fractional-cent
+// snapshots before these exact-cent lines contribute to PHP analytics.
 const itemCents = item => ({ $round: [{ $multiply: [
     decimal(`${item}.price`), decimal(`${item}.quantity`), 100
 ] }, 0] });
@@ -38,6 +38,7 @@ const validItems = { $and: [
         { $isNumber: '$$item.price' },
         { $gte: ['$$item.price', 0] },
         { $lte: ['$$item.price', Number.MAX_SAFE_INTEGER / 100] },
+        { $eq: [{ $mod: [{ $multiply: [decimal('$$item.price'), 100] }, 1] }, 0] },
         { $cond: [{ $isNumber: '$$item.quantity' }, { $and: [
             { $gt: ['$$item.quantity', 0] },
             { $lte: ['$$item.quantity', Number.MAX_SAFE_INTEGER] },
@@ -53,10 +54,10 @@ const validPaymentTime = { $cond: [{ $isNumber: '$paidAt' }, { $and: [
 
 const salesPipeline = range => [
     { $match: paidOrderFilter },
-    { $project: { items: 1, paidAt: 1, cents: merchandiseCents, validItems, hasPaymentTime: validPaymentTime } },
+    { $project: { items: 1, paidAt: 1, paymentCurrency: 1, cents: merchandiseCents, validItems, hasPaymentTime: validPaymentTime } },
     { $set: {
         inRange: { $and: ['$hasPaymentTime', { $gte: ['$paidAt', range.start] }, { $lt: ['$paidAt', range.end] }] },
-        validSnapshot: { $and: ['$validItems', { $gte: ['$cents', 0] }, { $lte: ['$cents', Number.MAX_SAFE_INTEGER] }] }
+        validSnapshot: { $and: [{ $eq: ['$paymentCurrency', 'PHP'] }, '$validItems', { $gte: ['$cents', 0] }, { $lte: ['$cents', Number.MAX_SAFE_INTEGER] }] }
     } },
     { $set: { included: { $and: ['$inRange', '$validSnapshot'] } } },
     { $facet: {
@@ -87,7 +88,7 @@ const currentOrdersPipeline = [
     { $facet: {
         statuses: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
         recentOrders: [{ $sort: { date: -1, _id: -1 } }, { $limit: 6 }, { $project: {
-            amount: 1, date: 1, status: 1, payment: 1, cancellationSource: 1,
+            amount: 1, paymentCurrency: 1, date: 1, status: 1, payment: 1, cancellationSource: 1,
             customerName: { $trim: { input: { $concat: [namePart('$address.firstName'), ' ', namePart('$address.lastName')] } } },
             itemCount: { $size: storedItems }
         } }],

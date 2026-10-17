@@ -3,7 +3,7 @@ import { Navigate, Outlet } from 'react-router-dom'
 import { ShopContext } from '../context/shopContext'
 
 const ProtectedRoute = () => {
-  const { token } = useContext(ShopContext)
+  const { token, sessionMessage } = useContext(ShopContext)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -13,7 +13,7 @@ const ProtectedRoute = () => {
   }, [])
 
   if (!ready) return null
-  return token ? <Outlet /> : <Navigate to='/login' replace />
+  return token ? <Outlet /> : <Navigate to={sessionMessage ? '/login?step=student' : '/login'} replace />
 }
 
 export default ProtectedRoute

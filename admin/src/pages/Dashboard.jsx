@@ -7,32 +7,32 @@ import OrderStatusSummary from '../components/OrderStatusSummary'
 import RecentOrders from '../components/RecentOrders'
 import LowStockProducts from '../components/LowStockProducts'
 import TopSellingProducts from '../components/TopSellingProducts'
+import { ArrowRight, Banknote, LayoutDashboard, ReceiptText, ShieldAlert } from '../components/DashboardIcons'
+import './Dashboard.css'
 
 const SalesOverviewChart = lazy(() => import('../components/SalesOverviewChart'))
 
 const summaryCards = [
-  { key: 'totalSales', label: 'Total Sales', caption: 'Last 30 days', icon: 'M5 7h14l2 14H3ZM9 7V5a3 3 0 0 1 6 0v2' },
-  { key: 'paidOrders', label: 'Paid Orders', caption: 'Last 30 days', icon: 'M3 3h2l3 12h11l2-8H6M9 21h.01M18 21h.01' },
-  { key: 'awaitingApproval', label: 'Awaiting Approval', caption: 'Current orders', icon: 'M5 3h10l4 4v14H5ZM14 3v5h5M9 12h6M9 16h4' },
-  { key: 'lowStockProducts', label: 'Low Stock Products', caption: 'Current inventory', icon: 'm12 3 9 5v9l-9 5-9-5V8ZM3 8l9 5 9-5M12 13v9' }
+  { key: 'totalSales', label: 'Total Sales', caption: 'Last 30 days', icon: Banknote },
+  { key: 'paidOrders', label: 'Paid Orders', caption: 'Last 30 days', icon: ReceiptText },
+  { key: 'awaitingApproval', label: 'Awaiting Approval', caption: 'Current orders', icon: LayoutDashboard },
+  { key: 'lowStockProducts', label: 'Low Stock Products', caption: 'Current inventory', icon: ShieldAlert }
 ]
 
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 const count = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 0 })
 const loadError = 'Dashboard data could not be loaded.'
 
-const DashboardSection = ({ id, title, description, to, actionLabel, children }) => (
-  <section aria-labelledby={id} className='flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'>
-    <header className='flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800'>
-      <div className='min-w-0 flex-1 basis-full border-l-2 border-amber-400 pl-3 sm:basis-auto'>
-        <h2 id={id} className='break-words text-sm font-semibold text-slate-950 dark:text-slate-100'>{title}</h2>
-        <p className='mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400'>{description}</p>
-      </div>
-      {to && <Link to={to} className='inline-flex min-h-11 max-w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'>
-        {actionLabel}<svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className='h-4 w-4 shrink-0'><path d='M4 12h16m-6-6 6 6-6 6' /></svg>
-      </Link>}
+const PanelLink = ({ to, label, className }) => <Link to={to} className={'dashboard-action ' + className}>{label}<ArrowRight size={16} aria-hidden='true' /></Link>
+
+const DashboardSection = ({ id, title, description, to, actionLabel, className = '', children }) => (
+  <section aria-labelledby={id} className={'dashboard-panel ' + className}>
+    <header className='dashboard-panel-heading'>
+      <div><h2 id={id}>{title}</h2><p>{description}</p></div>
+      {to && <PanelLink to={to} label={actionLabel} className='dashboard-desktop-action' />}
     </header>
     {children}
+    {to && <PanelLink to={to} label={actionLabel} className='dashboard-mobile-action' />}
   </section>
 )
 
@@ -73,14 +73,14 @@ const Dashboard = ({ token }) => {
     : 'Sales figures are incomplete: some paid records lack reliable payment data.'
 
   return (
-  <main aria-labelledby='dashboard-heading' className='mx-auto min-w-0 max-w-screen-2xl space-y-5 sm:space-y-6'>
-    <header className='border-l-4 border-amber-400 pl-4'>
-      <h1 id='dashboard-heading' className='text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl dark:text-slate-100'>Dashboard</h1>
-      <p className='mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400'>Overview of PAMO sales, orders, and inventory.</p>
-      <p role='status' className='mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400'>{message}</p>
+  <main aria-labelledby='dashboard-heading' className='pamo-dashboard'>
+    <header className='dashboard-heading'>
+      <p className='dashboard-eyebrow'>Administration / Overview</p>
+      <h1 id='dashboard-heading'>Dashboard</h1>
+      <p role='status' className={'dashboard-reporting-note' + (status === 'success' && !overview.complete ? ' is-incomplete' : '')}>{message}</p>
     </header>
 
-    <dl aria-label='Dashboard summary' aria-busy={status === 'loading'} className='grid min-w-0 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4'>
+    <dl aria-label='Dashboard summary' aria-busy={status === 'loading'} className='dashboard-kpis'>
       {summaryCards.map(card => {
         let value = '—'
         let caption = status === 'loading' ? 'Loading…' : 'Unavailable'
@@ -89,39 +89,47 @@ const Dashboard = ({ token }) => {
           caption = card.caption
           if (!overview.complete && ['totalSales', 'paidOrders'].includes(card.key)) caption += ' · Incomplete data'
         }
-        return <div key={card.key} className='min-w-0 rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60'>
-        <dt className='flex items-start gap-2 text-sm font-medium text-slate-600 dark:text-slate-300'>
-          <svg aria-hidden='true' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.7' strokeLinecap='round' strokeLinejoin='round' className='h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400'><path d={card.icon} /></svg>
-          <span className='min-w-0 break-words'>{card.label}</span>
+        const Icon = card.icon
+        return <div key={card.key} className={'dashboard-kpi' + (card.key === 'lowStockProducts' ? ' dashboard-kpi-stock' : '')}>
+        <dt><span className='dashboard-kpi-icon'><Icon size={20} aria-hidden='true' /></span><span>{card.label}</span>
         </dt>
-        <dd className='mt-3 [overflow-wrap:anywhere] text-2xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-slate-100'>{value}</dd>
-        <dd className='mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400'>{caption}</dd>
+        <dd className='dashboard-kpi-value'>{value}</dd>
+        <dd className='dashboard-kpi-caption'>{caption}</dd>
       </div>})}
     </dl>
 
-    <div className='grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'>
-      <DashboardSection id='sales-overview-heading' title='Sales Overview' description='Merchandise sales over time.'>
-        <Suspense fallback={<div role='status' className='flex min-h-44 items-center justify-center py-6 text-sm text-slate-500 sm:min-h-52 dark:text-slate-400'>Loading sales chart…</div>}>
+    <div className='dashboard-analytics'>
+      <DashboardSection id='sales-overview-heading' title='Sales Overview' description='Daily merchandise sales · last 30 days'>
+        <Suspense fallback={<div role='status' className='dashboard-state'>Loading sales chart…</div>}>
           <SalesOverviewChart status={status} data={overview?.salesTrend} complete={overview?.complete} formatSales={peso.format} />
         </Suspense>
       </DashboardSection>
-      <DashboardSection id='order-status-heading' title='Order Status' description='Distribution of PAMO order states.'>
+      <DashboardSection id='order-status-heading' title='Order Status' description='Current distribution of recorded order states'>
         <OrderStatusSummary status={status} counts={overview?.orderStatusCounts} formatCount={count.format} />
       </DashboardSection>
     </div>
 
-    <div className='grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-2'>
-      <DashboardSection id='recent-orders-heading' title='Recent Orders' description='Latest orders from students.' to='/orders' actionLabel='View All Orders'>
-        <RecentOrders status={status} orders={overview?.recentOrders} formatMoney={peso.format} />
-      </DashboardSection>
-      <DashboardSection id='low-stock-heading' title='Low Stock Products' description='Products with low inventory by size.' to='/list' actionLabel='View All Items'>
+    <div className='dashboard-details'>
+      <div className='dashboard-inventory-column'>
+      <DashboardSection id='low-stock-heading' title='Inventory Alerts' description='Low and out-of-stock sizes · current inventory' to='/list' actionLabel='View All Items' className='dashboard-inventory-panel'>
         <LowStockProducts status={status} products={overview?.lowStockProducts} formatCount={count.format} />
       </DashboardSection>
+      </div>
+      <div className='dashboard-orders-column'>
+      <DashboardSection id='recent-orders-heading' title='Recent Orders' description='Latest student orders' to='/orders' actionLabel='View All Orders' className='dashboard-recent-panel'>
+        <RecentOrders status={status} orders={overview?.recentOrders} formatMoney={peso.format} />
+      </DashboardSection>
+      <DashboardSection id='top-selling-heading' title='Top Selling Products' description='Ranked by quantity sold · last 30 days' className='dashboard-top-panel'>
+        <TopSellingProducts status={status} products={overview?.topProducts} complete={overview?.complete} formatCount={count.format} formatMoney={peso.format} />
+      </DashboardSection>
+      </div>
+      <aside className='dashboard-panel dashboard-priority'>
+        <p className='dashboard-eyebrow'>Inventory priority</p>
+        <h2>Review unavailable sizes first</h2>
+        <p>Check the actual per-size quantities before restocking. Prioritize sizes with no available stock.</p>
+        <PanelLink to='/list' label='Open Product Management' className='dashboard-brand-action' />
+      </aside>
     </div>
-
-    <DashboardSection id='top-selling-heading' title='Top Selling Products' description='By quantity sold in the last 30 days.'>
-      <TopSellingProducts status={status} products={overview?.topProducts} complete={overview?.complete} formatCount={count.format} formatMoney={peso.format} />
-    </DashboardSection>
   </main>
 )
 }
