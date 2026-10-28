@@ -233,7 +233,7 @@ const Contact = () => (
                 </dd>
               </div>
               <a
-                className={`${actionClassName} border-transparent bg-[var(--pamo-color-brand-yellow)] text-slate-950 hover:bg-[var(--pamo-color-brand-hover)] active:bg-[var(--pamo-color-brand-pressed)]`}
+                className={actionClassName}
                 href="tel:+639186804021"
                 aria-label="Call mobile 0918 680 4021"
               >
