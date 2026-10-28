@@ -67,11 +67,13 @@ const SalesOverviewChart = ({ status, data, complete, formatSales }) => {
       </div>
       <p className='dashboard-panel-note'>Focus the chart and use arrow keys to inspect daily merchandise sales.</p>
       {!complete && <p role='status' className='dashboard-panel-note'>Sales data for this period is incomplete.</p>}
-      <table className='sr-only'>
-        <caption>Daily merchandise sales</caption>
-        <thead><tr><th scope='col'>Date</th><th scope='col'>Sales</th></tr></thead>
-        <tbody>{data.map(entry => <tr key={entry.date}><th scope='row'>{fullDate.format(dateValue(entry.date))}</th><td>{formatSales(entry.sales)}</td></tr>)}</tbody>
-      </table>
+      <div className='sr-only'>
+        <table>
+          <caption>Daily merchandise sales</caption>
+          <thead><tr><th scope='col'>Date</th><th scope='col'>Sales</th></tr></thead>
+          <tbody>{data.map(entry => <tr key={entry.date}><th scope='row'>{fullDate.format(dateValue(entry.date))}</th><td>{formatSales(entry.sales)}</td></tr>)}</tbody>
+        </table>
+      </div>
     </figure>
   )
 }

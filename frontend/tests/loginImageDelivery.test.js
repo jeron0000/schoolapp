@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const variants = ['login_students-393.png', 'login_students-655.png', 'login_students.png'];
 const hosts = {};
 for (const host of ['frontend', 'admin']) {
   const directory = path.join(root, host);
@@ -18,7 +17,7 @@ for (const host of ['frontend', 'admin']) {
     jsx: 'automatic', write: false, resolveExtensions: ['.js', '.jsx', '.json'],
     loader: { '.css': 'empty' },
     plugins: [{ name: 'login-asset-urls', setup(builder) {
-      builder.onLoad({ filter: /\.png$/ }, args => ({
+      builder.onLoad({ filter: /\.(png|jpe?g)$/ }, args => ({
         contents: `export default ${JSON.stringify('/assets/' + path.basename(args.path))}`, loader: 'js'
       }));
     } }]
@@ -43,37 +42,38 @@ const configurations = [
   { host: 'admin', initialStep: 'adminLogin', initialPanel: 'cashier', heading: 'Sign in to Cashier' }
 ];
 
-test('original PNG remains byte-identical; derivatives preserve alpha, composition ratio and reduce bytes', () => {
-  const original = fs.readFileSync(path.join(root, 'shared/assets/login_students.png'));
-  assert.equal(crypto.createHash('sha256').update(original).digest('hex'), '17881010bd8aa74feec5daf2e09544d83ef1de0e749064d1dded00d022c3c354');
-  for (const [index, name] of variants.entries()) {
-    const buffer = fs.readFileSync(path.join(root, 'shared/assets', name));
-    assert.equal(buffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
-    const width = buffer.readUInt32BE(16), height = buffer.readUInt32BE(20);
-    assert.deepEqual([width, height], [[393, 360], [655, 600], [1310, 1200]][index]);
-    assert.equal(width * 1200, height * 1310);
-    assert.equal(buffer[25], 6, 'Retain RGBA transparency');
-    if (index < 2) assert.ok(buffer.length < original.length / 2);
-  }
+test('the enhanced campus photograph is local and optimized for web delivery', () => {
+  const photo = fs.readFileSync(path.join(root, 'shared/assets/login-campus.jpg'));
+  assert.equal(crypto.createHash('sha256').update(photo).digest('hex'), '8193ef772be874cea97a0a3b535710270be74d093c827bda0f8f6c4a01e9692b');
+  assert.equal(photo.subarray(0, 2).toString('hex'), 'ffd8');
+  assert.ok(photo.length < 512 * 1024);
+});
+
+test('campus layout uses independent theme overlays and fluid, scrollable card constraints', () => {
+  const css = fs.readFileSync(path.join(root, 'shared/LoginFlow.css'), 'utf8');
+  assert.match(css, /\.shared-login\s*\{[^}]*linear-gradient[^}]*var\(--login-campus-image\)/s);
+  assert.match(css, /\.dark \.shared-login\s*\{[^}]*#020617[^}]*linear-gradient/s);
+  assert.match(css, /background-size: cover/);
+  assert.match(css, /background-position: 60% center/);
+  assert.match(css, /@media \(min-width: 768px\)/);
+  assert.doesNotMatch(css, /backdrop-filter|filter:\s*blur|overflow:\s*hidden/);
 });
 
 for (const [host, { LoginFlow, require }] of Object.entries(hosts)) {
   const react = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   for (const configuration of configurations) {
-    test(`${host}: ${configuration.heading} retains presentation and responsive image attributes in both themes`, () => {
+    test(`${host}: ${configuration.heading} uses the centered campus card in both themes`, () => {
       for (const theme of ['light', 'dark']) {
         const markup = renderToStaticMarkup(react.createElement('div', { className: theme },
           react.createElement(LoginFlow, props(configuration))));
         assert.ok(markup.includes(configuration.heading));
-        const image = markup.match(/<img[^>]+class="login-students"[^>]*>/)?.[0];
-        assert.ok(image);
-        assert.match(image, /src="\/assets\/login_students\.png"/);
-        assert.match(image, /srcSet="\/assets\/login_students-393\.png 393w, \/assets\/login_students-655\.png 655w, \/assets\/login_students\.png 1310w"/);
-        assert.match(image, /width="1310" height="1200"/);
-        assert.match(image, /alt="Students in school uniforms with a guitar, basketball, laptop, and camera"/);
-        assert.doesNotMatch(image, /loading=|fetchPriority=|style=|onError=/);
-        assert.match(image, /sizes="\(min-width: 1180px\)/);
+        assert.match(markup, /--login-campus-image:url\(&quot;\/assets\/login-campus\.jpg&quot;\)/);
+        assert.equal((markup.match(/class="login-card /g) || []).length, 1);
+        assert.match(markup, /max-w-\[460px\]/);
+        assert.match(markup, /min-h-\[100svh\]/);
+        assert.match(markup, /alt="PAMO"/);
+        assert.doesNotMatch(markup, /login-students|Welcome to PAMO|grid-area:welcome|grid-area:photo|grid-cols-\[/);
         if (configuration.initialStep.endsWith('Login')) {
           assert.match(markup, /type="email"/);
           assert.match(markup, /type="password"/);
@@ -84,6 +84,31 @@ for (const [host, { LoginFlow, require }] of Object.entries(hosts)) {
     });
   }
 }
+
+test('Student Continue retains sign-in and authenticated navigation behavior', t => {
+  const destinations = [];
+  let render = harness(t, { onStudent: () => destinations.push('student') });
+  const advance = () => find(render(), element => element.type === 'button' && element.props.className?.split(' ').includes('login-primary'));
+  advance().props.onClick();
+  assert.equal(find(render(), element => element.type?.name === 'CredentialForm').props.student, true);
+  assert.deepEqual(destinations, []);
+  render = harness(t, { studentAuthenticated: true, onStudent: () => destinations.push('student') });
+  advance().props.onClick();
+  assert.deepEqual(destinations, ['student']);
+});
+
+test('the supplied theme toggle remains intact in the top-right header', t => {
+  let toggles = 0;
+  const toggle = react.createElement('button', { role: 'switch', 'aria-label': 'Dark mode', onClick: () => { toggles++; } });
+  const render = harness(t, { themeToggle: toggle });
+  const header = find(render(), element => element.type === 'header');
+  assert.match(header.props.className, /justify-end/);
+  const control = find(header, element => element.props.role === 'switch');
+  assert.equal(control.type, toggle.type);
+  assert.deepEqual(control.props, toggle.props);
+  control.props.onClick();
+  assert.equal(toggles, 1);
+});
 
 const react = hosts.frontend.require('react');
 const find = (element, predicate) => {
@@ -115,7 +140,7 @@ test('account and staff panel choices retain navigation callbacks and selection 
   const destinations = [];
   const render = harness(t, { onAdmin: panel => destinations.push(panel) });
   const choice = () => find(render(), element => element.type?.name === 'Choices');
-  const advance = () => find(render(), element => element.type === 'button' && element.props.className === 'login-primary');
+  const advance = () => find(render(), element => element.type === 'button' && element.props.className?.split(' ').includes('login-primary'));
   choice().props.onSelect('admin');
   advance().props.onClick();
   assert.equal(choice().props.kind, 'panel');
@@ -151,10 +176,19 @@ for (const panel of ['pamo', 'cashier']) {
 
 test('student registration and authentication callbacks retain their existing contracts', async t => {
   const calls = [];
-  const render = harness(t, { initialStep: 'studentLogin', onAuthenticate: (...args) => calls.push(args) });
+  const programOptions = [
+    { value: 'BSIT', label: 'BSIT' },
+    { value: 'digital-arts', label: 'Digital Arts' }
+  ];
+  const render = harness(t, {
+    initialStep: 'studentLogin',
+    programOptions,
+    onAuthenticate: (...args) => calls.push(args)
+  });
   const form = () => find(render(), element => element.type?.name === 'CredentialForm');
   form().props.onRegister(true);
   assert.equal(form().props.register, true);
+  assert.deepEqual(form().props.programOptions, programOptions);
   const credentials = { name: 'Synthetic Student', email: 'synthetic@example.test', password: 'synthetic-only' };
   await form().props.onSubmit(credentials, true);
   assert.deepEqual(calls, [[credentials, { register: true, panel: 'pamo' }]]);

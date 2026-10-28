@@ -1,12 +1,14 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
 import { Writable } from 'node:stream';
 import { v2 as cloudinary } from 'cloudinary';
 import productModel from '../models/productModel.js';
+import categoryModel from '../models/categoryModel.js';
+import mongoose from 'mongoose';
 import productRouter from '../routes/productRoute.js';
-import { addProduct } from '../controllers/productController.js';
+import { addProduct, addProductListing } from '../controllers/productController.js';
 import adminAuth from '../middleware/adminAuth.js';
 import { apiErrorHandler } from '../middleware/apiErrorHandler.js';
 import { ADMIN_SUBJECT } from '../../shared/authPolicy.js';
@@ -16,6 +18,10 @@ import { PRODUCT_IMAGE_MAX_BYTES, uploadProductImages, validateProductImage } fr
 process.env.JWT_SECRET = 'product-upload-test-only-secret';
 process.env.ADMIN_EMAIL = 'product-upload-admin-test';
 process.env.ADMIN_PASSWORD = 'product-upload-password';
+
+beforeEach(t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
+});
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8ZsAAAAASUVORK5CYII=', 'base64');
 const file = (overrides = {}) => ({ buffer: png, size: png.length, mimetype: 'image/png', originalname: 'uniform.png', fieldname: 'image1', ...overrides });
@@ -114,9 +120,16 @@ test('real product route accepts valid and image-free products and rejects unsaf
     assert.equal(saved[0].image.length, 1);
     assert.equal(calls.uploads.length, 1);
 
-    response = await send(form());
+    response = await send(form([], {
+        sizes: '["XL","S","L","M"]', inventory: '{"XL":4,"S":1,"L":3,"M":2}'
+    }));
     assert.equal((await response.json()).success, true);
     assert.deepEqual(saved[1].image, []);
+    assert.deepEqual(saved[1].sizes, ['S', 'M', 'L', 'XL']);
+    assert.deepEqual(Object.fromEntries(saved[1].inventory), { XL: 4, S: 1, L: 3, M: 2 });
+
+    response = await send(form([], { genders: '["Men"]', academicPrograms: '["BSIT"]', merchandiseCategoryCodes: '["TOP"]' }));
+    assert.equal((await response.json()).success, true, 'The current Add Items fields must fit the multipart limits');
 
     for (const [body, status] of [
         [form([{ type: 'image/svg+xml', buffer: Buffer.from('<svg/>') }]), 400],
@@ -198,4 +211,101 @@ test('a response failure after persistence never deletes images owned by the sav
     assert.equal(calls.deletes.length, 0);
     assert.equal(response.code, 500);
     assert.match(response.body.message, /saved/i);
+});
+
+const listingItems = () => [
+    { ...fields, name: 'Classic Shirt', optionLabel: 'Classic Shirt' },
+    { ...fields, name: 'Washday Shirt', optionLabel: 'Washday Shirt', price: '350.50', sizes: '["4XL"]', inventory: '{"4XL":7}',
+        sizeGuide: JSON.stringify({ fields: [{ key: 'chest', label: 'Chest circumference' }], measurements: [{ size: '4XL', values: { chest: 130 } }] }) }
+];
+
+const listingForm = (items = listingItems(), images = []) => {
+    const body = new FormData();
+    body.set('groupTitle', 'Campus Shirts');
+    body.set('items', JSON.stringify(items));
+    for (const field of images) body.set(field, new Blob([png], { type: 'image/png' }), 'shirt.png');
+    return body;
+};
+
+test('multi-item route creates independent products and images atomically behind Admin auth', async t => {
+    const calls = provider(t);
+    let products;
+    const session = { isolated: true };
+    t.mock.method(mongoose.connection, 'transaction', async work => work(session));
+    t.mock.method(productModel, 'create', async (records, options) => {
+        assert.equal(options.session, session);
+        assert.equal(options.ordered, true, 'Transaction writes must run sequentially');
+        products = records;
+        for (const record of records) await new productModel(record).validate();
+        return records;
+    });
+    const { base } = await server(t);
+    const token = issueAuthToken(ADMIN_SUBJECT, 'admin');
+    const response = await fetch(base + '/add-listing', { method: 'POST', headers: { token }, body: listingForm(undefined, ['item0image1', 'item1image2']) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).success, true);
+    assert.equal(products.length, 2);
+    assert.notEqual(String(products[0]._id), String(products[1]._id));
+    assert.ok(products.every(item => String(item.variantGroupId) === String(products[0]._id)));
+    assert.equal(products[0].groupTitle, 'Campus Shirts');
+    assert.equal(products[1].groupTitle, undefined);
+    assert.equal(products[0].optionLabel, 'Classic Shirt');
+    assert.equal(products[1].colorLabel, undefined);
+    assert.equal(products[1].price, 350.5);
+    assert.deepEqual(products[0].inventory, { M: 1 });
+    assert.deepEqual(products[1].inventory, { '4XL': 7 });
+    assert.equal(products[1].sizeGuide.measurements[0].values.chest, 130);
+    assert.equal(products[0].image[0], `https://res.cloudinary.com/test/image/upload/${calls.uploads[0].public_id}.png`);
+    assert.equal(products[1].image[0], `https://res.cloudinary.com/test/image/upload/${calls.uploads[1].public_id}.png`);
+    assert.equal(calls.deletes.length, 0);
+});
+
+test('multi-item validation rejects duplicates, invalid items, and unrelated files before uploading', async t => {
+    const calls = provider(t);
+    t.mock.method(productModel, 'create', () => assert.fail('Invalid listing cannot persist'));
+    const { base } = await server(t);
+    const token = issueAuthToken(ADMIN_SUBJECT, 'admin');
+    const duplicate = listingItems();
+    duplicate[1].optionLabel = ' classic  shirt ';
+    const invalid = listingItems();
+    invalid[1].price = '12.001';
+    const invalidStock = listingItems();
+    invalidStock[1].inventory = '{"4XL":-1}';
+    for (const body of [listingForm(duplicate), listingForm(invalid), listingForm(invalidStock), listingForm([listingItems()[0]]), listingForm(undefined, ['item7image1'])]) {
+        const response = await fetch(base + '/add-listing', { method: 'POST', headers: { token }, body });
+        assert.equal(response.status, 400);
+        assert.equal((await response.json()).success, false);
+    }
+    const unauthorized = await fetch(base + '/add-listing', { method: 'POST', body: listingForm() });
+    assert.equal(unauthorized.status, 401);
+    assert.equal(calls.uploads.length, 0);
+});
+
+test('failed listing transactions compensate all item images; uncertain commits preserve them', async t => {
+    const calls = provider(t);
+    let stored = [];
+    t.mock.method(productModel, 'create', async products => {
+        stored.push(products[0]);
+        throw new Error('isolated transaction failure');
+    });
+    t.mock.method(mongoose.connection, 'transaction', async work => {
+        try { await work({ isolated: true }); } catch (error) { stored = []; throw error; }
+    });
+    const response = () => ({ status(code) { this.code = code; return this; }, json(body) { this.body = body; } });
+    const req = { body: { groupTitle: 'Campus Shirts', items: JSON.stringify(listingItems()) }, files: { item0image1: [file()], item1image1: [file()] } };
+    let res = response();
+    await addProductListing(req, res);
+    assert.equal(res.body.success, false);
+    assert.equal(stored.length, 0);
+    assert.equal(calls.deletes.length, 2);
+    t.mock.method(mongoose.connection, 'transaction', async () => {
+        const error = new Error('uncertain commit');
+        error.hasErrorLabel = label => label === 'UnknownTransactionCommitResult';
+        throw error;
+    });
+    res = response();
+    await addProductListing(req, res);
+    assert.equal(res.code, 503);
+    assert.match(res.body.message, /Refresh/);
+    assert.equal(calls.deletes.length, 2, 'Uncertain commits must not delete potentially owned images');
 });

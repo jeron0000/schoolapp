@@ -1,18 +1,30 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --pamo-font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+    --pamo-font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --pamo-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  #root {
+    --pamo-font-family: var(--pamo-font-body);
+    font-family: var(--pamo-font-body);
+  }
   body {
     @apply m-0 bg-slate-50 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-100;
-    font-family: "Inter", system-ui, sans-serif;
+    font-family: var(--pamo-font-body);
   }
   h1,
   h2,
   h3 {
     @apply text-slate-900 dark:text-slate-100;
+  }
+  #root h1 {
+    font-family: var(--pamo-font-display);
   }
   body,
   :where(
@@ -91,7 +103,7 @@
     @apply transition-[filter] duration-[250ms] dark:invert;
   }
   .field {
-    @apply min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-amber-400 dark:focus:ring-amber-400/20;
+    @apply min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900/10 sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-amber-400 dark:focus:ring-amber-400/20;
   }
   .field-label {
     @apply mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300;
@@ -101,6 +113,30 @@
   }
   .product-grid {
     @apply grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--pamo-font-display);
+  }
+  .font-body {
+    font-family: var(--pamo-font-body);
+  }
+  .font-mono {
+    font-family: var(--pamo-font-mono);
+  }
+  .font-financial {
+    font-family: var(--pamo-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (max-width: 639px) {
+  #root input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  #root select,
+  #root textarea {
+    font-size: 1rem;
   }
 }
 

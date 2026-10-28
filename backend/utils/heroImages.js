@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { v2 as cloudinary } from 'cloudinary';
 import { detectImageMimeType } from './imageSignature.js';
-import { HERO_ALT_TEXT_LIMIT, HERO_PUBLIC_ID_PATTERN, validHeroAltText, secureHeroUrl } from '../models/heroSlideModel.js';
+import { HERO_ALT_TEXT_LIMIT, HERO_FALLBACK_ID, HERO_PUBLIC_ID_PATTERN, validHeroAltText, secureHeroUrl } from '../models/heroSlideModel.js';
 
 export const HERO_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const HERO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -14,6 +14,7 @@ export class HeroImageError extends Error {
 
 export const heroId = value => {
     if (typeof value !== 'string' || !mongoose.isObjectIdOrHexString(value)) throw new HeroImageError('Invalid hero image ID.');
+    if (value === HERO_FALLBACK_ID) throw new HeroImageError('Use Default Hero Image controls to manage the fallback.');
     return value.toLowerCase();
 };
 

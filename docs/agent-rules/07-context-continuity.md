@@ -41,6 +41,11 @@ Before resuming development:
 The actual local repository overrides remembered context,
 previous agent reports, and older remote copies.
 
+PAMO Legacy is globally unfrozen: do not restore historical feature or
+design freezes from older checkpoints, approvals or agent reports.
+Normal task authorization, security and data-integrity safeguards remain.
+This status does not apply to PAMO Campus (MERN).
+
 If essential context is missing, report the gap.
 Never fabricate progress or assume unverified completion.
 
@@ -69,13 +74,13 @@ Never sacrifice correctness to reduce token consumption.
 
 ## Invariants Across Transitions
 
-Preserve security, data integrity, approved designs,
-protected features, backend contracts, Git changes,
+Preserve security, data integrity, designs/features outside authorized
+changes, backend contracts, Git changes,
 scope restrictions, and verification honesty.
 
 Never automatically:
 - Commit, push, deploy, or discard existing work.
-- Modify protected functionality or approved Figma.
+- Modify functionality/UI outside the authorized task or edit Figma without authorization.
 - Enable disabled payment integrations.
 - Freeze features or advance to another phase.
 - Expand permissions or bypass agent restrictions.

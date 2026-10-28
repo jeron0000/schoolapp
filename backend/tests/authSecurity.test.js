@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import { createHmac } from 'node:crypto';
 import userModel from '../models/userModel.js';
+import categoryModel from '../models/categoryModel.js';
 import { loginUser, registerUser, adminLogin } from '../controllers/userController.js';
 import authUser from '../middleware/auth.js';
 import adminAuth from '../middleware/adminAuth.js';
@@ -43,6 +44,7 @@ test('all token roles use secret-free identity claims and bounded expiration', (
 });
 
 test('actual registration and login issue customer claims and ignore submitted roles', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     const password = 'synthetic-customer-password';
     const hash = await bcrypt.hash(password, 4);
     t.mock.method(userModel, 'findOne', async () => ({ _id: userId, password: hash, role: 'customer' }));
@@ -55,7 +57,7 @@ test('actual registration and login issue customer claims and ignore submitted r
         return { _id: userId, role: this.role };
     });
     const registration = response();
-    await registerUser({ body: { name: 'Synthetic student', email: 'student@school.test', password, role: 'cashier' } }, registration);
+    await registerUser({ body: { name: 'Synthetic student', email: 'student@school.test', password, academicProgram: 'BSIT', role: 'cashier' } }, registration);
     assertToken(registration.body.token, 'customer');
 });
 

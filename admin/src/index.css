@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=Miniver&family=Outfit:wght@100..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Prata&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
 
 @tailwind base;
 
@@ -6,8 +6,22 @@
 
 @tailwind utilities;
 
+:root {
+  --pamo-font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pamo-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+body {
+  font-family: var(--pamo-font-body);
+}
+
+#root {
+  --pamo-font-family: var(--pamo-font-body);
+  font-family: var(--pamo-font-body);
+}
+
 * {
-  font-family: Outfit;
+  font-family: inherit;
 }
 
 select,input,textarea {
@@ -65,6 +79,41 @@ select,input,textarea {
 
   .theme-upload {
     @apply transition-[filter] duration-[250ms];
+  }
+}
+
+@layer utilities {
+  #root .font-body {
+    font-family: var(--pamo-font-body);
+  }
+
+  #root .font-mono {
+    font-family: var(--pamo-font-mono);
+  }
+
+  #root .font-financial {
+    font-family: var(--pamo-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+#root .pamo-dashboard-layout,
+#root .cashier-dashboard-layout {
+  --pamo-staff-body: clamp(.875rem, calc(.84rem + .12vw), .9375rem);
+  --pamo-staff-small: clamp(.8125rem, calc(.78rem + .1vw), .875rem);
+  --pamo-staff-heading: clamp(1.5rem, calc(1.36rem + .55vw), 1.75rem);
+  --pamo-staff-section: clamp(1.125rem, calc(1.06rem + .2vw), 1.25rem);
+  --pamo-staff-leading: 1.55;
+  --pamo-staff-compact-leading: 1.45;
+  --pamo-staff-heading-leading: 1.2;
+  --pamo-staff-section-leading: 1.35;
+}
+
+@media (max-width: 639px) {
+  #root input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  #root select,
+  #root textarea {
+    font-size: 1rem;
   }
 }
 

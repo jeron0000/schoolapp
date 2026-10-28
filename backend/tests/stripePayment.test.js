@@ -37,9 +37,13 @@ const fixtureEvent = overrides => ({ object: 'event', id: 'evt_SR3AA', type: 'ch
     created: Math.floor(Date.now() / 1000), data: { object: { object: 'checkout.session', id: sessionId } }, ...overrides });
 const clone = value => value == null ? value : structuredClone(value);
 const field = (object, key) => key.split('.').reduce((value, part) => value?.[part], object);
-const matches = (object, filter) => Object.entries(filter).every(([key, expected]) =>
-    expected && typeof expected === 'object' && Object.hasOwn(expected, '$exists')
-        ? (field(object, key) !== undefined) === expected.$exists : field(object, key) === expected);
+const matches = (object, filter) => Object.entries(filter).every(([key, expected]) => {
+    if (expected && typeof expected === 'object') {
+        if (Object.hasOwn(expected, '$exists')) return (field(object, key) !== undefined) === expected.$exists;
+        if (Object.hasOwn(expected, '$ne')) return field(object, key) !== expected.$ne;
+    }
+    return field(object, key) === expected;
+});
 const apply = (object, changes) => {
     for (const [key, value] of Object.entries(changes)) {
         const parts = key.split('.');
@@ -84,6 +88,7 @@ const harness = (t, orders = [fixtureOrder()], { cancellation = false } = {}) =>
         return clone(candidate);
     });
     let restored = 0;
+    t.mock.method(productModel, 'findOne', () => ({ lean: async () => null }));
     for (const [model, methods] of [[productModel, ['findById', 'findOneAndUpdate']], [userModel, ['findByIdAndUpdate', 'updateOne']]]) {
         for (const method of methods) t.mock.method(model, method, () => assert.fail('Unexpected stock/cart operation'));
     }
@@ -168,7 +173,7 @@ test('valid captured settlement changes only payment/evidence, preserving approv
     expected.paidAt = paid.paidAt;
     Object.assign(expected.stripePayment, { chargeId, verifiedAt: paid.paidAt });
     assert.deepEqual(paid, expected);
-    assert.deepEqual(getAllowedOrderStatuses(paid), ['Approved', 'Cancelled']);
+    assert.deepEqual(getAllowedOrderStatuses(paid), ['Approved']);
     assert.equal(h.restored(), 0);
     assert.equal(h.writes.length, 1);
 });
@@ -266,13 +271,15 @@ test('cancellation/status races cannot overwrite workflow or released stock', as
     });
 });
 
-test('payment-first preserves existing paid pre-approval cancellation and once-only restoration', async t => {
+test('paid online orders deny student cancellation and preserve evidence through exceptional Admin cancellation', async t => {
     const h = harness(t, [fixtureOrder()], { cancellation: true });
     await h.verifier.confirmPayment({ orderId, userId });
     const evidence = clone(h.stored.get(orderId).stripePayment);
     const timestamp = h.stored.get(orderId).paidAt;
-    await cancelReservedOrder(orderId, { userId, source: 'customer' });
-    await cancelReservedOrder(orderId, { userId, source: 'customer' });
+    await assert.rejects(cancelReservedOrder(orderId, { userId, source: 'customer' }), { code: 'ONLINE_CANCELLATION_RESTRICTED' });
+    const options = { source: 'admin', exceptionReason: 'The merchant cannot fulfill this order.', expectedStatus: 'Order Placed', expectedPayment: true };
+    await cancelReservedOrder(orderId, options);
+    await cancelReservedOrder(orderId, options);
     const cancelled = h.stored.get(orderId);
     assert.equal(cancelled.status, 'Cancelled');
     assert.equal(cancelled.inventoryStatus, 'released');

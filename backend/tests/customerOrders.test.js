@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import orderModel from '../models/orderModel.js';
 import authUser from '../middleware/auth.js';
+import adminAuth from '../middleware/adminAuth.js';
 
 process.env.STRIPE_SECRET_KEY = 'sk_test_customer_orders';
 process.env.JWT_SECRET = 'customer-orders-test-secret';
@@ -16,7 +17,7 @@ test('customer orders use the authenticated owner and expose only customer order
     t.mock.method(orderModel, 'find', query => {
         assert.deepEqual(query, { userId });
         return { select(fields) {
-            assert.equal(fields, '_id items amount status paymentMethod payment date sentToCashierAt receiptNumber paidAt cancellationSource refund paymentCurrency confirmedBy stripePayment paypalPayment paymentRecovery');
+            assert.equal(fields, '_id items amount status paymentMethod payment demoPayment date sentToCashierAt receiptNumber paidAt cancellationSource cancelledAt cancellationRequest refund paymentCurrency confirmedBy stripePayment paypalPayment paymentRecovery inventoryStatus');
             return { lean: async () => [record] };
         } };
     });
@@ -47,6 +48,8 @@ test('customer endpoint retains token authorization and rejects missing sessions
     assert.equal(router.stack.find(layer => layer.route?.path === '/userorders').route.stack[0].handle, authUser);
     const cancelRoute = router.stack.find(layer => layer.route?.path === '/cancel').route;
     assert.deepEqual(cancelRoute.stack.map(layer => layer.handle), [authUser, cancelCustomerOrder]);
+    assert.equal(router.stack.find(layer => layer.route?.path === '/cancellation/request').route.stack[0].handle, authUser);
+    assert.equal(router.stack.find(layer => layer.route?.path === '/cancellation/review').route.stack[0].handle, adminAuth);
     const res = response();
     await authUser({ headers: {}, body: {} }, res, () => assert.fail('Unexpected access'));
     assert.equal(res.body.success, false);

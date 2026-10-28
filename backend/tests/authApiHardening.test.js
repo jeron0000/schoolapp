@@ -8,6 +8,7 @@ import multer from 'multer';
 import userModel from '../models/userModel.js';
 import productModel from '../models/productModel.js';
 import orderModel from '../models/orderModel.js';
+import categoryModel from '../models/categoryModel.js';
 import { loginUser, registerUser, adminLogin } from '../controllers/userController.js';
 import { addProduct, listProducts, singleProduct, removeProduct, updateProductFlags, updateStock } from '../controllers/productController.js';
 import { placeOrder, allOrders, userOrders, updateStatus } from '../controllers/orderController.js';
@@ -49,16 +50,18 @@ test('malformed credential types never query, hash, compare passwords or save ac
 });
 
 test('registration rejects bad format, weak passwords and over-72-byte passwords before querying', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     t.mock.method(userModel, 'findOne', () => assert.fail('Invalid registration must not query accounts'));
     for (const body of [{ email: 'not-an-email', password: 'synthetic-password' },
         ...['short', 'x'.repeat(73), 'é'.repeat(37), '😀'.repeat(19)].map(password => ({ email, password }))]) {
-        const res = await call(registerUser, { name: 'Synthetic student', ...body });
+        const res = await call(registerUser, { name: 'Synthetic student', academicProgram: 'BSIT', ...body });
         assert.equal(res.body.success, false);
         assert.doesNotMatch(JSON.stringify(res.body), /synthetic-private|stack|CastError/);
     }
 });
 
 test('new registrations accept ASCII and multibyte passwords at the 72-byte boundary', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     t.mock.method(userModel, 'findOne', async () => null);
     t.mock.method(bcrypt, 'genSalt', async () => bcrypt.genSaltSync(4));
     t.mock.method(userModel.prototype, 'save', async function () {
@@ -67,7 +70,7 @@ test('new registrations accept ASCII and multibyte passwords at the 72-byte boun
     });
     for (const password of ['x'.repeat(72), 'é'.repeat(36)]) {
         assert.equal(Buffer.byteLength(password, 'utf8'), 72);
-        const res = await call(registerUser, { name: 'Synthetic student', email, password, role: 'admin' });
+        const res = await call(registerUser, { name: 'Synthetic student', email, password, academicProgram: 'BSIT', role: 'admin' });
         assert.equal(res.body.success, true);
         assert.equal(verifyAuthToken(res.body.token).role, 'customer');
         assert.equal(res.locals.authenticationSucceeded, true);
@@ -111,10 +114,11 @@ test('configured admin credentials preserve exact comparison without bcrypt trun
 });
 
 test('duplicate registration and database failures disclose no account or internal error details', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     const find = t.mock.method(userModel, 'findOne', async () => ({ _id: id }));
-    const duplicate = await call(registerUser, { name: 'Synthetic student', email, password: 'synthetic-password' });
+    const duplicate = await call(registerUser, { name: 'Synthetic student', email, password: 'synthetic-password', academicProgram: 'BSIT' });
     find.mock.mockImplementation(async () => { throw privateError(); });
-    const failed = await call(registerUser, { name: 'Synthetic student', email, password: 'synthetic-password' });
+    const failed = await call(registerUser, { name: 'Synthetic student', email, password: 'synthetic-password', academicProgram: 'BSIT' });
     assert.deepEqual(duplicate.body, failed.body);
     assert.doesNotMatch(JSON.stringify(failed.body), /private-driver|already exists/);
     for (const handler of [loginUser, adminLogin]) {
@@ -244,9 +248,11 @@ test('upload/other client errors are sanitized, and already-started responses de
 });
 
 test('product endpoints never expose or log raw database/provider exceptions', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     const logged = [];
     t.mock.method(console, 'log', (...args) => logged.push(args));
-    t.mock.method(productModel, 'find', async () => { throw privateError(); });
+    t.mock.method(productModel, 'find', () => { throw privateError(); });
+    t.mock.method(productModel, 'findOne', () => { throw privateError(); });
     t.mock.method(productModel, 'findById', () => ({ lean: async () => { throw privateError(); }, then: (_resolve, reject) => reject(privateError()) }));
     t.mock.method(productModel, 'findByIdAndUpdate', async () => { throw privateError(); });
     t.mock.method(productModel.prototype, 'save', async () => { throw privateError(); });
@@ -266,7 +272,12 @@ test('product endpoints never expose or log raw database/provider exceptions', a
 });
 
 test('order endpoint failures remain safe without changing payment or inventory behavior', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     const log = t.mock.method(console, 'log', () => {});
+    t.mock.method(userModel, 'findById', () => ({
+        select() { return this; },
+        lean: async () => ({ name: 'Synthetic Student', email: 'student@example.test', academicProgram: 'BSIT', role: 'customer' })
+    }));
     t.mock.method(orderModel, 'init', async () => { throw privateError(); });
     const find = t.mock.method(orderModel, 'find', async () => { throw privateError(); });
     t.mock.method(orderModel, 'findById', async () => { throw privateError(); });

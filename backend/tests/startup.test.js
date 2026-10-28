@@ -21,6 +21,7 @@ process.on('unhandledRejection', error => unhandled.push(error));
 let resolveDb, rejectDb;
 const database = new Promise((resolve, reject) => { resolveDb = resolve; rejectDb = reject; });
 const connection = new EventEmitter();
+connection.readyState = 0;
 const fakeProcess = { argv: ['node', fileURLToPath(serverUrl)], env: { MONGODB_URI: 'mongodb://synthetic.invalid', PORT: '4567' } };
 if (options.defaultPort) delete fakeProcess.env.PORT;
 if (options.relativeEntry) fakeProcess.argv[1] = 'backend/server.js';
@@ -53,14 +54,16 @@ const synthetic = values => new vm.SyntheticModule(Object.keys(values), function
 }, { context });
 const mongo = new vm.SourceTextModule(mongoSource, { context, identifier: mongoUrl.href });
 await mongo.link(specifier => {
+  if (specifier === './paymentDemo.js') return synthetic({ getApplicationDatabaseName: () => 'e-commerce' });
   assert.equal(specifier, 'mongoose');
   return synthetic({ default: {
     connection,
-    connect(url) {
-      events.push(['database']);
+    connect(url, settings) {
+      events.push(['database', settings]);
       urls.push(url);
       if (options.connectionThrows) throw new Error('private database diagnostic');
-      return database;
+      if (options.firstConnectionFails && urls.length === 1) return Promise.reject(new Error('private database diagnostic'));
+      return database.then(() => { connection.readyState = 1; });
     }
   } });
 });
@@ -86,7 +89,7 @@ await entry.link(specifier => {
   });
   if (specifier === './middleware/apiErrorHandler.js') return synthetic({ apiErrorHandler: 'api-errors' });
   if (specifier === './routes/heroRoute.js') return synthetic({ default: 'hero-router', heroErrorHandler: 'hero-errors' });
-  assert.match(specifier, /^\.\/routes\/(user|product|cart|order|dashboard)Route\.js$/);
+  assert.match(specifier, /^\.\/routes\/(user|product|cart|order|dashboard|announcement|category)Route\.js$/);
   return synthetic({ default: specifier });
 });
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -123,7 +126,9 @@ await flush();
 assert.equal(listeners.length, 1);
 assert.deepEqual(events.find(([name]) => name === 'listen'), ['listen', '4567', 'localhost']);
 assert(events.findIndex(([name]) => name === 'cloudinary') < events.findIndex(([name]) => name === 'database'));
-assert.deepEqual(urls, ['mongodb://synthetic.invalid/e-commerce']);
+assert.deepEqual(urls, ['mongodb://synthetic.invalid']);
+assert.equal(events.find(([name]) => name === 'database')[1].dbName, 'e-commerce');
+assert.equal(events.find(([name]) => name === 'database')[1].serverSelectionTimeoutMS, 10000);
 assert.equal(fakeProcess.exitCode, undefined);
 assert.deepEqual(unhandled, []);
 `);
@@ -187,7 +192,8 @@ assert.equal(listeners.length, 1);
 assert.equal(listeners[0].listenerCount('error'), 0);
 assert.equal(listeners[0].listenerCount('listening'), 0);
 connection.emit('connected');
-assert(messages.some(row => row[1] === 'DB Connected'));
+await mongo.namespace.default();
+assert.equal(urls.length, 1, 'A ready connection is reused');
 `, { importOnly: true });
 });
 
@@ -195,16 +201,55 @@ test('middleware and route order remain unchanged and no dormant provider routes
     run(`
 assert.deepEqual(events.filter(([name]) => ['security', 'use', 'get'].includes(name)).map(row => row.slice(0, 3)), [
   ['security'], ['use', 'json-parser'],
+  ['use', '/api', events.find(row => row[1] === '/api')[2]],
   ['use', '/api/user', './routes/userRoute.js'],
   ['use', '/api/product', './routes/productRoute.js'],
   ['use', '/api/cart', './routes/cartRoute.js'],
   ['use', '/api/order', './routes/orderRoute.js'],
   ['use', '/api/dashboard', './routes/dashboardRoute.js'],
   ['use', '/api/hero', 'hero-router'],
+  ['use', '/api/announcement', './routes/announcementRoute.js'],
+  ['use', '/api/category', './routes/categoryRoute.js'],
   ['get', '/', events.find(([name]) => name === 'get')[2]], ['use', 'api-errors']
 ]);
 assert.deepEqual(events.find(row => row[1] === '/api/hero'), ['use', '/api/hero', 'hero-router', 'hero-errors']);
 `, { importOnly: true });
+});
+
+test('serverless API requests wait for one shared connection and reuse readiness', () => {
+    run(`
+const middleware = events.find(row => row[1] === '/api')[2];
+let nextCalls = 0;
+const response = { status() { assert.fail('Unexpected unavailable response'); } };
+const first = middleware({}, response, () => nextCalls++);
+const second = middleware({}, response, () => nextCalls++);
+await flush();
+assert.equal(urls.length, 1);
+assert.equal(nextCalls, 0);
+resolveDb();
+await Promise.all([first, second]);
+assert.equal(nextCalls, 2);
+await middleware({}, response, () => nextCalls++);
+assert.equal(nextCalls, 3);
+assert.equal(urls.length, 1);
+assert.equal(listeners.length, 0);
+`, { importOnly: true });
+});
+
+test('serverless initialization fails safely and the next request can retry', () => {
+    run(`
+const middleware = events.find(row => row[1] === '/api')[2];
+const response = { status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
+await middleware({}, response, () => assert.fail('Failed connection reached API handler'));
+assert.equal(response.code, 503);
+assert.doesNotMatch(JSON.stringify(response.body), /private|mongodb|stack/);
+const retry = middleware({}, response, () => {});
+await flush();
+assert.equal(urls.length, 2);
+resolveDb();
+await retry;
+assert.deepEqual(unhandled, []);
+`, { importOnly: true, firstConnectionFails: true });
 });
 
 test('existing backend startup commands still target server.js', async () => {

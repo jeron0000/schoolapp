@@ -4,7 +4,9 @@ export const PHP_CURRENCY = 'PHP'
 export const PHP_SYMBOL = '₱'
 export const ORDER_FEE_PHP = 10
 
-const invalidMoney = () => { throw new Error('Enter a non-negative PHP amount with at most two decimal places and safe numeric precision.') }
+const invalidMoney = () => {
+  throw new Error('Enter a non-negative PHP amount with at most two decimal places and safe numeric precision.')
+}
 
 // Parse decimal digits exactly; do not round fractional centavos or use value * 100.
 export const phpMinorUnits = value => {
@@ -31,7 +33,11 @@ export const phpFromMinorUnits = minor => {
 }
 
 export const validPhpAmount = value => {
-  try { return typeof value === 'number' && phpMinorUnits(value) >= 0 } catch { return false }
+  try {
+    return typeof value === 'number' && phpMinorUnits(value) >= 0
+  } catch {
+    return false
+  }
 }
 
 export const sumPhp = (...values) => phpFromMinorUnits(values.reduce((total, value) => {
@@ -54,13 +60,21 @@ export const cartPhpTotal = (products, cart) => {
     findProduct ??= createProductLookup(products)
     const product = findProduct(id)
     if (!product) continue // Deleted products retain the existing cart-removal behavior.
-    for (const quantity of Object.values(sizes)) if (quantity > 0) items.push({ price: product.price, quantity })
+    for (const quantity of Object.values(sizes)) {
+      if (quantity > 0) {
+        items.push({ price: product.price, quantity })
+      }
+    }
   }
   return phpItemsTotal(items)
 }
 
 export const tryPhpLineTotal = (price, quantity) => {
-  try { return phpLineTotal(price, quantity) } catch { return null }
+  try {
+    return phpLineTotal(price, quantity)
+  } catch {
+    return null
+  }
 }
 
 export const orderPhpTotals = order => {
@@ -69,24 +83,43 @@ export const orderPhpTotals = order => {
     const subtotal = phpItemsTotal(order.items)
     const difference = phpMinorUnits(order.amount) - phpMinorUnits(subtotal)
     return { subtotal, fee: difference >= 0 ? phpFromMinorUnits(difference) : null }
-  } catch { return { subtotal: null, fee: null } }
+  } catch {
+    return { subtotal: null, fee: null }
+  }
 }
 
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: PHP_CURRENCY, minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const nominal = new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const formatPhp = value => {
-  try { return peso.format(phpFromMinorUnits(phpMinorUnits(value))) } catch { return 'Unavailable' }
+  try {
+    return peso.format(phpFromMinorUnits(phpMinorUnits(value)))
+  } catch {
+    return 'Unavailable'
+  }
 }
 
 // Currency on historical orders is evidence, not a preference or an FX instruction.
 export const formatOrderMoney = (value, order) => {
   const currency = order?.paymentCurrency
   if (currency === PHP_CURRENCY) {
-    if (validPhpAmount(value)) return formatPhp(value)
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0
-      ? `${value} PHP (precision needs review)` : 'Unavailable'
+    if (validPhpAmount(value)) {
+      return formatPhp(value)
+    }
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return `${value} PHP (precision needs review)`
+    }
+    return 'Unavailable'
   }
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 'Unavailable'
+
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 'Unavailable'
+  }
+
   const exact = validPhpAmount(value)
-  return `${exact ? nominal.format(value) : value} ${typeof currency === 'string' && /^[A-Z]{3}$/.test(currency) ? currency : '(currency unverified)'}${exact ? '' : ' (precision needs review)'}`
+  const displayedValue = exact ? nominal.format(value) : value
+  const hasVerifiedCurrency = typeof currency === 'string' && /^[A-Z]{3}$/.test(currency)
+  const currencyLabel = hasVerifiedCurrency ? currency : '(currency unverified)'
+  const precisionNotice = exact ? '' : ' (precision needs review)'
+
+  return `${displayedValue} ${currencyLabel}${precisionNotice}`
 }

@@ -8,7 +8,8 @@ export const orderFilters = [
   ['Paid', order => order.payment === true],
   ['Ready for Release', order => order.status === 'Ready To Claim'],
   ['Completed', order => order.status === 'Claimed'],
-  ['Cancelled', order => order.status === 'Cancelled']
+  ['Cancelled', order => order.status === 'Cancelled'],
+  ['Cancellation Requests', order => order.cancellationRequest?.status === 'pending']
 ]
 
 export const statusColors = {
@@ -34,6 +35,7 @@ export const actionLabels = {
 
 export const getOrderStatusLabel = order => {
   if (order.status !== 'Cancelled') return order.status
+  if (order.cancellationRequest?.status === 'approved') return 'Cancellation Approved'
   if (order.cancellationSource === 'customer') return 'Cancelled by Customer'
   if (order.cancellationSource === 'admin') return 'Rejected by Admin'
   return 'Cancelled'
@@ -44,14 +46,18 @@ const textValue = (value, limit) => typeof value === 'string' && value.trim()
   : ''
 
 export const orderAddress = order => {
+  const student = order?.student && typeof order.student === 'object' && !Array.isArray(order.student)
+    ? order.student
+    : {}
   const source = order?.address && typeof order.address === 'object' && !Array.isArray(order.address)
     ? order.address
     : {}
   const firstName = textValue(source.firstName, 100)
   const lastName = textValue(source.lastName, 100)
   return {
-    name: [firstName, lastName].filter(Boolean).join(' ') || 'Name not provided',
-    email: textValue(source.email, 254),
+    name: textValue(student.name, 200) || [firstName, lastName].filter(Boolean).join(' ') || 'Name not provided',
+    email: textValue(student.email, 254) || textValue(source.email, 254),
+    academicProgram: textValue(student.academicProgram, 100),
     phone: textValue(source.phone, 30),
     street: textValue(source.street, 200),
     locality: [
@@ -59,7 +65,8 @@ export const orderAddress = order => {
       textValue(source.state, 100),
       textValue(source.country, 100),
       textValue(source.zipcode, 20)
-    ].filter(Boolean).join(', ')
+    ].filter(Boolean).join(', '),
+    campusPickup: order?.fulfillmentMethod === 'campus_pickup'
   }
 }
 

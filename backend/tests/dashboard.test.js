@@ -15,7 +15,7 @@ import { dashboardRange, getDashboardOverview } from '../utils/dashboard.js';
 import { confirmCashierPayment } from '../controllers/cashierController.js';
 
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
-const emptyProducts = t => t.mock.method(productModel, 'find', () => ({ lean: () => ({ cursor: () => {
+const emptyProducts = t => t.mock.method(productModel, 'find', () => ({ select: () => ({ lean: async () => [] }), lean: () => ({ cursor: () => {
     const cursor = (async function* () {})();
     cursor.close = async () => {};
     return cursor;
@@ -46,9 +46,13 @@ test('invalid ranges fail cleanly before any database query', async t => {
 });
 
 test('the zero series includes today even when requested exactly at Manila midnight', async t => {
-    t.mock.method(orderModel, 'aggregate', async pipeline => pipeline[0].$match
-        ? [{ summary: [], trend: [], topProducts: [], quality: [] }]
-        : [{ statuses: [], recentOrders: [], paidCancelledOrders: [] }]);
+    t.mock.method(orderModel, 'aggregate', async pipeline => {
+        if (pipeline[0].$match) {
+            assert.deepEqual(pipeline[0].$match['demoPayment.mode'], { $ne: 'demo' });
+            return [{ summary: [], trend: [], topProducts: [], quality: [] }];
+        }
+        return [{ statuses: [], recentOrders: [], paidCancelledOrders: [] }];
+    });
     emptyProducts(t);
     const range = dashboardRange('30d', Date.parse('2026-01-01T00:00:00+08:00'));
     const data = await getDashboardOverview(range);

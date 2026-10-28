@@ -14,7 +14,7 @@ export const heroErrorMessage = error => error.response?.data?.message || error.
 export const fetchHeroImages = async (token, signal) => {
   const data = await request('get', '/admin/list', token, undefined, signal)
   if (!Array.isArray(data.slides)) throw new Error('Unable to read the managed hero image list. Please retry.')
-  return data.slides
+  return { slides: data.slides, fallback: data.fallback || null }
 }
 
 export const createHeroImage = (token, { image, altText, isActive }) => {
@@ -27,4 +27,12 @@ export const createHeroImage = (token, { image, altText, isActive }) => {
 
 export const updateHeroImage = (token, id, metadata) => request('patch', '/' + id, token, metadata)
 export const reorderHeroImages = (token, orderedIds) => request('patch', '/reorder', token, { orderedIds })
+export const setDefaultHeroImage = (token, id) => request('patch', '/' + id + '/default', token)
 export const deleteHeroImage = (token, id) => request('delete', '/' + id, token)
+export const replaceFallbackHeroImage = (token, { image, altText }) => {
+  const data = new FormData()
+  data.append('image', image)
+  data.append('altText', altText)
+  return request('put', '/fallback', token, data)
+}
+export const resetFallbackHeroImage = token => request('delete', '/fallback', token)

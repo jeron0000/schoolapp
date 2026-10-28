@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 
-const readSlides = data => {
-  if (data?.success !== true || !Array.isArray(data.slides)) return []
-  return data.slides.filter(slide => {
-    if (typeof slide?.imageUrl !== 'string' || typeof slide.altText !== 'string' || !slide.altText.trim()) return false
-    try {
-      const url = new URL(slide.imageUrl)
-      return url.protocol === 'https:' && !url.username && !url.password
-    } catch {
-      return false
-    }
-  })
+const validSlide = slide => {
+  if (typeof slide?.imageUrl !== 'string' || typeof slide.altText !== 'string' || !slide.altText.trim()) return false
+  try {
+    const url = new URL(slide.imageUrl)
+    return url.protocol === 'https:' && !url.username && !url.password
+  } catch {
+    return false
+  }
+}
+
+const readImages = data => {
+  if (data?.success !== true || !Array.isArray(data.slides)) return { slides: [], fallback: null }
+  return { slides: data.slides.filter(validSlide), fallback: validSlide(data.fallback) ? data.fallback : null }
 }
 
 const useHeroSlides = backendUrl => {
-  const [result, setResult] = useState({ backendUrl, slides: [] })
+  const [result, setResult] = useState({ backendUrl, slides: [], fallback: null })
   const request = useRef(null)
 
   useEffect(() => {
@@ -25,22 +27,27 @@ const useHeroSlides = backendUrl => {
       request.current = {
         backendUrl,
         promise: axios.get(backendUrl + '/api/hero/list', { timeout: 10000 })
-          .then(response => readSlides(response.data))
-          .catch(() => [])
+          .then(response => readImages(response.data))
+          .catch(() => ({ slides: [], fallback: null }))
       }
     }
-    request.current.promise.then(slides => {
-      if (subscribed) setResult({ backendUrl, slides })
+    request.current.promise.then(images => {
+      if (subscribed) setResult({ backendUrl, ...images })
     })
     return () => { subscribed = false }
   }, [backendUrl])
 
   const discardImage = imageUrl => setResult(current => ({
     ...current,
-    slides: current.slides.filter(slide => slide.imageUrl !== imageUrl)
+    slides: current.slides.filter(slide => slide.imageUrl !== imageUrl),
+    fallback: current.fallback?.imageUrl === imageUrl ? null : current.fallback
   }))
 
-  return { slides: result.backendUrl === backendUrl ? result.slides : [], discardImage }
+  return {
+    slides: result.backendUrl === backendUrl ? result.slides : [],
+    fallback: result.backendUrl === backendUrl ? result.fallback : null,
+    discardImage
+  }
 }
 
 export default useHeroSlides

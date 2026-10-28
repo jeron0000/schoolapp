@@ -6,9 +6,10 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import orderModel from '../models/orderModel.js';
 import userModel from '../models/userModel.js';
+import categoryModel from '../models/categoryModel.js';
 import cashierAuth from '../middleware/cashierAuth.js';
 import adminAuth from '../middleware/adminAuth.js';
-import { cashierOrders, confirmCashierPayment } from '../controllers/cashierController.js';
+import { cashierOrders, confirmCashierPayment, recordOnlineReceipt } from '../controllers/cashierController.js';
 import { adminLogin, registerUser } from '../controllers/userController.js';
 import { mockReceiptConnection } from './helpers/receiptConnection.js';
 
@@ -22,9 +23,86 @@ const response = () => ({ code: 200, status(code) { this.code = code; return thi
 const unpaid = overrides => ({ _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', paymentCurrency: 'PHP', amount: 235, ...overrides });
 const request = overrides => ({ body: { orderId: id, paymentMethod: 'COD', receiptNumber: ' OR-101 ', ...overrides }, staff: { identity: 'cashier@school.test' } });
 
+const onlinePaid = overrides => ({ ...unpaid(), status: 'Approved', payment: true, paymentMethod: 'Stripe', paidAt: 123,
+    stripePayment: { sessionId: 'cs_test_fixture', paymentIntentId: 'pi_fixture', chargeId: 'ch_fixture',
+        accountId: 'acct_fixture', livemode: false, verifiedAt: 123 }, ...overrides });
+
+test('online receipt recording is Cashier-only and updates only the original receipt field', async t => {
+    const route = router.stack.find(layer => layer.route?.path === '/cashier/receipt').route;
+    assert.equal(route.stack[0].handle, cashierAuth);
+    assert.equal(route.stack[1].handle, recordOnlineReceipt);
+    mockReceiptConnection(t, orderModel);
+    const original = onlinePaid();
+    t.mock.method(orderModel, 'findById', async () => original);
+    t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update) => {
+        assert.equal(filter.payment, true);
+        assert.equal(filter['stripePayment.chargeId'], original.stripePayment.chargeId);
+        assert.deepEqual(filter.$or, [{ receiptNumber: { $exists: false } }, { receiptNumber: null }, { receiptNumber: '' }]);
+        assert.deepEqual(update, { $set: { receiptNumber: 'OR-101' } });
+        const saved = { ...original, ...update.$set };
+        return { ...saved, toObject: () => saved };
+    });
+    const res = response();
+    await recordOnlineReceipt(request({ payment: false, amount: 1, status: 'Cancelled' }), res);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.order.receiptIsTest, true);
+    assert.match(res.body.message, /not a genuine school-issued receipt/);
+    assert.equal(res.body.order.paidAt, original.paidAt);
+    assert.equal(res.body.order.status, original.status);
+    assert.deepEqual(res.body.order.stripePayment, original.stripePayment);
+});
+
+test('online receipt recording rejects missing verification, unpaid/COD/demo records and existing receipts', async t => {
+    t.mock.method(orderModel, 'findOneAndUpdate', async () => assert.fail('Unexpected receipt write'));
+    for (const change of [{ payment: false }, { receiptNumber: 'OR-EXISTING' }, { stripePayment: undefined },
+        { paymentMethod: 'COD' }, { demoPayment: { mode: 'demo' } }, { paidAt: 321 }, { amount: 0 }]) {
+        t.mock.method(orderModel, 'findById', async () => onlinePaid(change));
+        const res = response();
+        await recordOnlineReceipt(request(), res);
+        assert.equal(res.code, 409);
+    }
+});
+
+test('online receipt recording rejects concurrent writes and duplicate receipt numbers', async t => {
+    mockReceiptConnection(t, orderModel);
+    t.mock.method(orderModel, 'findById', async () => onlinePaid());
+    let saved;
+    t.mock.method(orderModel, 'findOneAndUpdate', async (_filter, update) => {
+        if (saved) return null;
+        saved = { ...onlinePaid(), ...update.$set };
+        return { ...saved, toObject: () => saved };
+    });
+    const results = [response(), response()];
+    await Promise.all(results.map(res => recordOnlineReceipt(request(), res)));
+    assert.deepEqual(results.map(res => res.code).sort(), [200, 409]);
+    t.mock.method(orderModel, 'findOneAndUpdate', async () => { throw { code: 11000 }; });
+    const duplicate = response();
+    await recordOnlineReceipt(request(), duplicate);
+    assert.equal(duplicate.code, 409);
+    assert.match(duplicate.body.message, /already recorded/);
+});
+
+test('verified PayPal receipts retain live/sandbox provenance and payment evidence', async t => {
+    mockReceiptConnection(t, orderModel);
+    for (const environment of ['sandbox', 'live']) {
+        const original = onlinePaid({ paymentMethod: 'Paypal', stripePayment: undefined,
+            paypalPayment: { orderId: 'PAYPALORDER', captureId: 'CAPTURE', merchantId: 'MERCHANT', environment, verifiedAt: 123 } });
+        t.mock.method(orderModel, 'findById', async () => original);
+        t.mock.method(orderModel, 'findOneAndUpdate', async (_filter, update) => {
+            const saved = { ...original, ...update.$set };
+            return { ...saved, toObject: () => saved };
+        });
+        const res = response();
+        await recordOnlineReceipt(request(), res);
+        assert.equal(res.body.success, true);
+        assert.equal(res.body.order.receiptIsTest, environment === 'sandbox');
+        assert.deepEqual(res.body.order.paypalPayment, original.paypalPayment);
+    }
+});
+
 test('cashier list includes only sent unpaid orders or canonical paid transactions', async t => {
     t.mock.method(orderModel, 'find', async query => {
-        assert.deepEqual(query, { $or: [{ status: 'Sent to Cashier', payment: false }, { payment: true }] });
+        assert.deepEqual(query, { 'demoPayment.mode': { $ne: 'demo' }, $or: [{ status: 'Sent to Cashier', payment: false }, { payment: true }] });
         return [{ ...unpaid(), toObject: () => unpaid() }];
     });
     const res = response();
@@ -41,8 +119,8 @@ test('confirmation stores receipt, timestamp, identity and returns to preparatio
         assert.deepEqual(options.partialFilterExpression, { receiptNumber: { $type: 'string' } });
     });
     t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update, options) => {
-        assert.deepEqual(filter, { _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: 235, paymentCurrency: 'PHP' });
-        assert.deepEqual(options, { new: true, runValidators: true });
+        assert.deepEqual(filter, { _id: id, status: 'Sent to Cashier', payment: false, paymentMethod: 'COD', amount: 235, paymentCurrency: 'PHP', 'cancellationRequest.status': { $ne: 'pending' } });
+        assert.deepEqual(options, { returnDocument: 'after', runValidators: true });
         assert.deepEqual(Object.keys(update.$set).sort(), ['confirmedBy', 'paidAt', 'payment', 'paymentMethod', 'receiptNumber', 'status']);
         assert.equal(update.$set.payment, true);
         assert.equal(update.$set.status, 'Packing');
@@ -61,6 +139,7 @@ test('confirmation stores receipt, timestamp, identity and returns to preparatio
 test('unapproved, cancelled, completed, paid, provider and invalid-total orders never write', async t => {
     for (const overrides of [
         { status: 'Order Placed' }, { status: 'Approved' }, { status: 'Cancelled' }, { status: 'Claimed' },
+        { cancellationRequest: { status: 'pending' } },
         { payment: true }, { paymentMethod: 'Stripe' }, { paymentMethod: 'PayPal' },
         { amount: 0 }, { amount: -10 }, { amount: NaN }
     ]) {
@@ -173,12 +252,13 @@ test('existing admin login remains valid and cashier login verifies its stored p
 });
 
 test('public registration cannot assign itself cashier privileges', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     t.mock.method(userModel, 'findOne', async () => null);
     t.mock.method(userModel.prototype, 'save', async function () {
         assert.equal(this.role, 'customer');
         return { _id: id };
     });
     const res = response();
-    await registerUser({ body: { name: 'Test', email: 'student@school.test', password: 'test-password', role: 'cashier' } }, res);
+    await registerUser({ body: { name: 'Test', email: 'student@school.test', password: 'test-password', academicProgram: 'BSIT', role: 'cashier' } }, res);
     assert.equal(res.body.success, true);
 });

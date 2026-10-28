@@ -16,13 +16,16 @@ import 'react-toastify/dist/ReactToastify.css';
 import Verify from './pages/Verify'
 import { useTheme } from './hooks/useTheme'
 import ProtectedRoute from './components/ProtectedRoute'
+import Announcements from './pages/Announcements'
+import Account from './pages/Account'
+import DemoPayment from './pages/DemoPayment'
 
 const App = () => {
   const { theme } = useTheme()
   const { pathname } = useLocation()
   return (
     
-    <div className='flex min-h-screen flex-col'>
+    <div className={'flex min-h-screen flex-col' + (pathname === '/verify' ? ' storefront-verify' : '')}>
     <ToastContainer theme={theme}/>
     {pathname !== '/login' && <NavBar />}
     <main id='main-content' className={(pathname === '/' || pathname === '/login' || pathname === '/collection' || pathname === '/about' ? '' : 'content-container ') + 'flex-1'}>
@@ -37,7 +40,10 @@ const App = () => {
       <Route path='/cart' element={<Cart/>} />
       <Route path='/place-order' element={<PlaceOrder/>} />
       <Route path='/orders' element={<Orders/>} />
+      <Route path='/announcements' element={<Announcements/>} />
+      <Route path='/account' element={<Account/>} />
       <Route path='/verify' element={<Verify/>} />
+      <Route path='/demo-payment/:orderId' element={<DemoPayment/>} />
       </Route>
     </Routes>
     </main>

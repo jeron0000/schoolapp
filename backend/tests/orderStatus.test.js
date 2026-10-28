@@ -19,7 +19,8 @@ const document = data => ({ ...data, toObject: () => ({ ...data }) });
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
 
 test('workflow preserves payment ownership and supports existing order stages', () => {
-    assert.deepEqual(getAllowedOrderStatuses({ status: 'Order Placed', payment: false }), ['Approved', 'Cancelled']);
+    assert.deepEqual(getAllowedOrderStatuses({ status: 'Order Placed', payment: false, paymentMethod: 'COD' }), ['Approved', 'Cancelled']);
+    assert.deepEqual(getAllowedOrderStatuses({ status: 'Order Placed', payment: true }), ['Approved']);
     for (const status of ['Approved', 'Packing']) {
         assert.deepEqual(getAllowedOrderStatuses({ status, payment: false }), ['Sent to Cashier']);
         assert.deepEqual(getAllowedOrderStatuses({ status, payment: true }), ['Ready To Claim']);
@@ -44,20 +45,23 @@ test('valid transitions persist status and the cashier handoff timestamp', async
     ];
     for (const [status, payment, next] of cases) {
         await t.test(`${status} → ${next} (paid=${payment})`, async t => {
-            let stored = { _id: orderId, status, payment, paymentMethod: 'COD', amount: 235 };
+            let stored = { _id: orderId, status, payment, paymentMethod: 'COD', paymentCurrency: 'PHP', amount: 235 };
             t.mock.method(mongoose.connection, 'transaction', async callback => callback({}));
             t.mock.method(orderModel, 'findOne', () => ({ session() { return this; }, lean: async () => ({ ...stored }) }));
             t.mock.method(orderModel, 'findById', async () => document(stored));
             t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update, options) => {
-                assert.deepEqual(filter, { _id: orderId, status, payment, ...(next === 'Cancelled' ? { inventoryStatus: { $exists: false } } : {}) });
+                assert.deepEqual(filter, { _id: orderId, status, payment, 'cancellationRequest.status': { $ne: 'pending' }, ...(next === 'Cancelled' ? { paymentMethod: 'COD', inventoryStatus: { $exists: false } } : {}) });
                 if (next === 'Sent to Cashier') {
                     assert.equal(typeof update.$set.sentToCashierAt, 'number');
                     assert.deepEqual(Object.keys(update.$set).sort(), ['sentToCashierAt', 'status']);
                     assert.equal(update.$set.status, next);
+                } else if (next === 'Cancelled') {
+                    assert.equal(typeof update.$set.cancelledAt, 'number');
+                    assert.deepEqual(update, { $set: { status: next, cancellationSource: 'admin', cancelledAt: update.$set.cancelledAt } });
                 } else {
-                    assert.deepEqual(update, { $set: { status: next, ...(next === 'Cancelled' ? { cancellationSource: 'admin' } : {}) } });
+                    assert.deepEqual(update, { $set: { status: next } });
                 }
-                assert.deepEqual(options, next === 'Cancelled' ? { session: {}, returnDocument: 'after', runValidators: true } : { new: true });
+                assert.deepEqual(options, next === 'Cancelled' ? { session: {}, returnDocument: 'after', runValidators: true } : { returnDocument: 'after' });
                 stored = { ...stored, ...update.$set };
                 return document(stored);
             });

@@ -77,14 +77,17 @@ export const getOrderPresentation = (order) => {
     current: null,
   };
   if (order.status === "Cancelled") {
+    let cancellationLabel = presentation.label;
+    if (order.cancellationRequest?.status === 'approved') {
+      cancellationLabel = 'Cancellation Approved';
+    } else if (order.cancellationSource === "customer") {
+      cancellationLabel = "Cancelled by You";
+    } else if (order.cancellationSource === "admin") {
+      cancellationLabel = "Rejected by Admin";
+    }
     return {
       ...presentation,
-      label:
-        order.cancellationSource === "customer"
-          ? "Cancelled by You"
-          : order.cancellationSource === "admin"
-            ? "Rejected by Admin"
-            : presentation.label,
+      label: cancellationLabel,
     };
   }
   if (order.status === "Sent to Cashier" && order.payment === true) {

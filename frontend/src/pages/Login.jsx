@@ -8,9 +8,19 @@ import ThemeToggle from "../components/ThemeToggle";
 import "../components/StorefrontFoundation.css";
 import LoginFlow from "../../../shared/LoginFlow";
 import { loginDestination } from "../../../shared/loginNavigation";
+import { getAcademicProgramOptions } from "../../../shared/productTaxonomy.js";
 
 const Login = () => {
-  const { token, setToken, sessionMessage, navigate, backendUrl } =
+  const {
+    token,
+    setToken,
+    sessionMessage,
+    navigate,
+    backendUrl,
+    productCategories = [],
+    categoriesLoading = false,
+    categoryError = "",
+  } =
     useContext(ShopContext);
   const { search } = useLocation();
   const studentStep =
@@ -35,6 +45,9 @@ const Login = () => {
       themeToggle={<ThemeToggle />}
       initialStep={studentStep ? "studentLogin" : "account"}
       studentAuthenticated={Boolean(token)}
+      programOptions={getAcademicProgramOptions(productCategories)}
+      programsLoading={categoriesLoading}
+      programsError={categoryError}
       onStudent={() => navigate("/")}
       onAdmin={(panel) =>
         window.location.assign(loginDestination("admin", { panel }))

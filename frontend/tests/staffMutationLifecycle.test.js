@@ -21,6 +21,7 @@ const react = {
   useLayoutEffect: (callback, dependencies) => currentRunner.effect(callback, dependencies, 'layout')
 };
 const axios = {
+  get: async () => ({ data: { success: true, categories: [], archivedCategories: [] } }),
   post: (url, body, options) => {
     let resolve, reject;
     const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
@@ -51,7 +52,7 @@ compiled.require = name => {
   if (name === 'axios') return axios;
   if (name === 'react-router-dom') return { useLocation: () => currentRunner.location };
   if (name === 'react-toastify') return { toast: {
-    success: message => environment.toasts.push(['success', message]),
+    success: (message, options) => environment.toasts.push(['success', message, options]),
     error: message => environment.toasts.push(['error', message])
   } };
   return requireAdmin(name);
@@ -501,6 +502,13 @@ test('Orders V2: claim requires deliberate confirmation and prevents duplicate m
   await pending;
   assert.equal(h.api().order.status, 'Claimed');
   assert.equal(h.api().pending, false);
+  const [, content, options] = env.toasts.at(-1);
+  const renderedToast = content.type(content.props);
+  assert(find(renderedToast, node => node.props.children === 'Order successfully claimed'));
+  assert(find(renderedToast, node => node.props.children === 'The order has been marked as claimed.'));
+  assert.equal(options.autoClose, 4000);
+  assert.equal(options.hideProgressBar, true);
+  assert.equal(options.icon, false);
 });
 
 test('Orders V2: cancelled confirmation and ineligible claim make no requests', async t => {
@@ -545,4 +553,64 @@ test('Orders V2: late claim failure after unmount cannot refresh or notify the n
   await pending;
   assert.equal(env.requests.length, 2);
   assert.deepEqual(env.toasts, []);
+});
+
+for (const decision of ['approve', 'reject']) test(`cancellation review: ${decision} requires confirmation and submits once`, async t => {
+  const env = setup(t);
+  const h = runner(t, 'Orders');
+  const order = { ...fixtures()[0], status: 'Packing', payment: true, allowedStatuses: [],
+    cancellationRequest: { _id: 'request-A', status: 'pending', reason: 'Wrong size', requestedAt: Date.now() } };
+  env.requests[0].resolve({ data: { success: true, orders: [order] } });
+  await settle();
+  h.select('A');
+  h.api().onReview(order, decision);
+  h.render(); h.flush();
+  assert.equal(env.requests.length, 1);
+  if (decision === 'reject') {
+    assert.equal(button(h, 'Confirm Decision').props.disabled, true);
+    find(h.tree, node => node.type === 'textarea').props.onChange({ target: { value: 'Preparation already started.' } });
+    h.render();
+  }
+  const confirm = button(h, 'Confirm Decision');
+  assert.equal(confirm.props.disabled, false);
+  const pending = confirm.props.onClick();
+  await confirm.props.onClick();
+  assert.equal(env.requests.length, 2);
+  assert(env.requests[1].url.endsWith('/api/order/cancellation/review'));
+  assert.deepEqual(env.requests[1].body, { orderId: 'A', requestId: 'request-A', decision,
+    ...(decision === 'reject' ? { reason: 'Preparation already started.' } : {}) });
+  const updated = { ...order, status: decision === 'approve' ? 'Cancelled' : 'Packing',
+    cancellationRequest: { ...order.cancellationRequest, status: decision === 'approve' ? 'approved' : 'rejected' } };
+  env.requests[1].resolve({ data: { success: true, message: 'Decision saved.', order: updated } });
+  await pending;
+  assert.equal(h.api().order.cancellationRequest.status, updated.cancellationRequest.status);
+  assert.equal(h.api().pending, false);
+});
+
+test('exceptional online cancellation reuses Admin confirmation, requires a reason, and submits once', async t => {
+  const env = setup(t);
+  const h = runner(t, 'Orders');
+  const order = { ...fixtures()[0], status: 'Packing', paymentMethod: 'Paypal', payment: true, allowedStatuses: [] };
+  env.requests[0].resolve({ data: { success: true, orders: [order] } });
+  await settle();
+  h.select('A');
+  h.api().onReview(order, 'exception');
+  h.render(); h.flush();
+  assert.equal(env.requests.length, 1);
+  assert.equal(button(h, 'Confirm Decision').props.disabled, true);
+  find(h.tree, node => node.type === 'textarea').props.onChange({ target: { value: 'Merchant cannot fulfill the item.' } });
+  h.render();
+  const confirm = button(h, 'Confirm Decision');
+  const pending = confirm.props.onClick();
+  await confirm.props.onClick();
+  assert.equal(env.requests.length, 2);
+  assert.deepEqual(env.requests[1].body, {
+    orderId: 'A', decision: 'exception', expectedStatus: 'Packing', reason: 'Merchant cannot fulfill the item.'
+  });
+  env.requests[1].resolve({ data: { success: true, message: 'Refund requires review.', order: {
+    ...order, status: 'Cancelled', refund: { status: 'Refund Required', requiredAt: 1 }
+  } } });
+  await pending;
+  assert.equal(h.api().order.refund.status, 'Refund Required');
+  assert.equal(h.api().pending, false);
 });

@@ -38,9 +38,13 @@ const headers = () => ({ 'paypal-auth-algo': 'SHA256withRSA', 'paypal-cert-url':
     'paypal-transmission-time': '2026-10-14T00:00:00Z' });
 const clone = value => value == null ? value : structuredClone(value);
 const field = (object, key) => key.split('.').reduce((value, part) => value?.[part], object);
-const matches = (object, filter) => Object.entries(filter).every(([key, expected]) =>
-    expected && typeof expected === 'object' && Object.hasOwn(expected, '$exists')
-        ? (field(object, key) !== undefined) === expected.$exists : field(object, key) === expected);
+const matches = (object, filter) => Object.entries(filter).every(([key, expected]) => {
+    if (expected && typeof expected === 'object') {
+        if (Object.hasOwn(expected, '$exists')) return (field(object, key) !== undefined) === expected.$exists;
+        if (Object.hasOwn(expected, '$ne')) return field(object, key) !== expected.$ne;
+    }
+    return field(object, key) === expected;
+});
 const apply = (object, changes) => {
     for (const [key, value] of Object.entries(changes)) {
         const parts = key.split('.');
@@ -83,6 +87,7 @@ const harness = (t, orders = [fixtureOrder()], { cancellation = false } = {}) =>
         return clone(candidate);
     });
     let restored = 0;
+    t.mock.method(productModel, 'findOne', () => ({ lean: async () => null }));
     for (const [model, methods] of [[productModel, ['findById', 'findOneAndUpdate']], [userModel, ['findByIdAndUpdate', 'updateOne']]]) {
         for (const method of methods) t.mock.method(model, method, () => assert.fail('Unexpected stock/cart write'));
     }
@@ -182,7 +187,7 @@ test('completed full capture sets payment/evidence only, keeping approval, stock
     expected.paidAt = paid.paidAt;
     Object.assign(expected.paypalPayment, { captureId, verifiedAt: paid.paidAt });
     assert.deepEqual(paid, expected);
-    assert.deepEqual(getAllowedOrderStatuses(paid), ['Approved', 'Cancelled']);
+    assert.deepEqual(getAllowedOrderStatuses(paid), ['Approved']);
     assert.deepEqual(h.providerCalls.map(call => call.verb), ['GET', 'GET']);
     assert.equal(h.restored(), 0);
 });
@@ -263,7 +268,10 @@ test('concurrent confirmations and retries preserve one payment effect and the o
 test('unique provider order/capture/event identities prevent replay and unavailable indexes block all writes', async t => {
     for (const identity of ['orderId', 'captureId', 'eventId']) await t.test(identity, async t => {
         const conflicting = fixtureOrder({ _id: otherOrderId, paypalPayment: { ...binding(), orderId: 'OTHER', captureId: 'OTHER', eventId: 'WH-OTHER' } });
-        conflicting.paypalPayment[identity] = identity === 'eventId' ? 'WH-SR3B001' : identity === 'captureId' ? captureId : paypalOrderId;
+        let conflictingIdentity = paypalOrderId;
+        if (identity === 'eventId') conflictingIdentity = 'WH-SR3B001';
+        else if (identity === 'captureId') conflictingIdentity = captureId;
+        conflicting.paypalPayment[identity] = conflictingIdentity;
         const h = harness(t, [fixtureOrder({ paypalPayment: identity === 'orderId' ? undefined : binding() }), conflicting]);
         const attempt = identity === 'orderId' ? h.verifier.bindOrder({ orderId, userId, paypalOrderId }) : webhook(h);
         await expectCode(attempt, 'provider_replay');
@@ -288,13 +296,15 @@ test('cancellation, amount, status and binding races cannot overwrite another tr
     });
 });
 
-test('payment-first keeps the established paid pre-approval cancellation and once-only stock restoration', async t => {
+test('paid online orders require exceptional Admin cancellation with evidence and once-only stock restoration', async t => {
     const h = harness(t, [fixtureOrder()], { cancellation: true });
     await h.verifier.confirmPayment({ orderId, userId });
     const evidence = clone(h.stored.get(orderId).paypalPayment);
     const paidAt = h.stored.get(orderId).paidAt;
-    await cancelReservedOrder(orderId, { userId, source: 'customer' });
-    await cancelReservedOrder(orderId, { userId, source: 'customer' });
+    await assert.rejects(cancelReservedOrder(orderId, { userId, source: 'customer' }), { code: 'ONLINE_CANCELLATION_RESTRICTED' });
+    const options = { source: 'admin', exceptionReason: 'The merchant cannot fulfill this order.', expectedStatus: 'Order Placed', expectedPayment: true };
+    await cancelReservedOrder(orderId, options);
+    await cancelReservedOrder(orderId, options);
     assert.equal(h.stored.get(orderId).status, 'Cancelled');
     assert.equal(h.stored.get(orderId).inventoryStatus, 'released');
     assert.equal(h.stored.get(orderId).payment, true);

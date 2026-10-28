@@ -8,6 +8,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ['"Plus Jakarta Sans"', '"Inter"', 'system-ui', 'sans-serif'],
+        body: ['"Inter"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
+      },
       colors: {
         amber: { 300: '#ffe04d', 400: '#ffd100', 500: '#d9b200' },
         emerald: { 300: '#22c55e', 400: '#22c55e', 500: '#22c55e', 700: '#15803d' },

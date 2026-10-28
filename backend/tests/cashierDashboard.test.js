@@ -29,7 +29,7 @@ const records = (t, entries) => {
     let reads = 0, closed = false;
     t.mock.method(orderModel, 'find', (filter, projection) => {
         reads++;
-        assert.deepEqual(filter, { $or: [{ payment: true }, { status: 'Sent to Cashier', payment: false }] });
+        assert.deepEqual(filter, { 'demoPayment.mode': { $ne: 'demo' }, $or: [{ payment: true }, { status: 'Sent to Cashier', payment: false }] });
         assert.equal(projection.amount, 1);
         assert.equal(projection['address.firstName'], 1);
         assert(!projection.userId && !projection.address && !projection.confirmedBy);

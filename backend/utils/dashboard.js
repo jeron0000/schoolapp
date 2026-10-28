@@ -1,5 +1,6 @@
 import orderModel from '../models/orderModel.js';
 import productModel from '../models/productModel.js';
+import { executeDueScheduledStockUpdates } from './scheduledStock.js';
 import { getInventorySizes, getSizeStock, getStockLabel } from '../../shared/inventory.js';
 
 const day = 86400000;
@@ -8,7 +9,7 @@ const timezone = 'Asia/Manila';
 const cancelledStatus = 'Cancelled';
 const awaitingApprovalStatus = 'Order Placed';
 const detailLimit = 5;
-const paidOrderFilter = { payment: true, status: { $ne: cancelledStatus } };
+const paidOrderFilter = { payment: true, status: { $ne: cancelledStatus }, 'demoPayment.mode': { $ne: 'demo' } };
 const includedOrder = { $match: { included: true } };
 
 // Calendar days in the Philippines, including today up to the request time.
@@ -18,9 +19,12 @@ export const dashboardRange = (key = '30d', now = Date.now()) => {
     }
     const local = new Date(now + manilaOffset);
     const today = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - manilaOffset;
-    const start = key === 'thisMonth'
-        ? Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - manilaOffset
-        : today - (key === '7d' ? 6 : 29) * day;
+    let start = today - 29 * day;
+    if (key === '7d') {
+        start = today - 6 * day;
+    } else if (key === 'thisMonth') {
+        start = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - manilaOffset;
+    }
     return { key, start, end: now, timezone };
 };
 
@@ -84,50 +88,112 @@ const salesPipeline = range => [
 ];
 
 const namePart = input => ({ $convert: { input, to: 'string', onError: '', onNull: '' } });
+const studentName = { $trim: { input: namePart('$student.name') } };
+const addressName = { $trim: { input: { $concat: [namePart('$address.firstName'), ' ', namePart('$address.lastName')] } } };
 const currentOrdersPipeline = [
     { $facet: {
         statuses: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
         recentOrders: [{ $sort: { date: -1, _id: -1 } }, { $limit: 6 }, { $project: {
             amount: 1, paymentCurrency: 1, date: 1, status: 1, payment: 1, cancellationSource: 1,
-            customerName: { $trim: { input: { $concat: [namePart('$address.firstName'), ' ', namePart('$address.lastName')] } } },
+            customerName: { $cond: [{ $ne: [studentName, ''] }, studentName, addressName] },
             itemCount: { $size: storedItems }
         } }],
-        paidCancelledOrders: [{ $match: { payment: true, status: cancelledStatus } }, { $count: 'count' }]
+        paidCancelledOrders: [{ $match: { payment: true, status: cancelledStatus, 'demoPayment.mode': { $ne: 'demo' } } }, { $count: 'count' }]
     } }
 ];
 
-const attentionOrder = (a, b) => a.minimumStock - b.minimumStock
-    || b.affectedSizes.length - a.affectedSizes.length
-    || a.name.localeCompare(b.name) || a.productId.localeCompare(b.productId);
+const attentionOrder = (left, right) => {
+    const stockDifference = left.minimumStock - right.minimumStock;
+    if (stockDifference) {
+        return stockDifference;
+    }
+
+    const affectedSizeDifference = right.affectedSizes.length - left.affectedSizes.length;
+    if (affectedSizeDifference) {
+        return affectedSizeDifference;
+    }
+
+    const nameDifference = left.name.localeCompare(right.name);
+    if (nameDifference) {
+        return nameDifference;
+    }
+    return left.productId.localeCompare(right.productId);
+};
+
+const affectedInventorySizes = product => {
+    const sizes = [...new Set(getInventorySizes(product))];
+    return sizes
+        .map(size => ({ size, stock: getSizeStock(product, size) }))
+        .filter(entry => getStockLabel(entry.stock) !== 'In Stock');
+};
 
 // Stream projected products to reuse the canonical inventory helpers, not a
 // second MongoDB interpretation of applicable sizes or missing/invalid stock.
 const lowStockOverview = async () => {
+    await executeDueScheduledStockUpdates(new Date());
     const cursor = productModel.find({}, { name: 1, sizes: 1, inventory: 1 }).lean().cursor();
     let count = 0;
     const products = [];
     try {
         for await (const product of cursor) {
-            const affectedSizes = [...new Set(getInventorySizes(product))]
-                .map(size => ({ size, stock: getSizeStock(product, size) }))
-                .filter(entry => getStockLabel(entry.stock) !== 'In Stock');
-            if (!affectedSizes.length) continue;
+            const affectedSizes = affectedInventorySizes(product);
+            if (!affectedSizes.length) {
+                continue;
+            }
+
             count++;
-            products.push({ productId: String(product._id), name: product.name, affectedSizes,
-                minimumStock: Math.min(...affectedSizes.map(entry => entry.stock)) });
+            products.push({
+                productId: String(product._id),
+                name: product.name,
+                affectedSizes,
+                minimumStock: Math.min(...affectedSizes.map(entry => entry.stock))
+            });
             products.sort(attentionOrder);
-            if (products.length > detailLimit) products.pop();
+            if (products.length > detailLimit) {
+                products.pop();
+            }
         }
     } finally {
         await cursor.close();
     }
-    return { count, products: products.map(({ productId, name, affectedSizes }) => ({ productId, name, affectedSizes })) };
+    return {
+        count,
+        products: products.map(({ productId, name, affectedSizes }) => ({ productId, name, affectedSizes }))
+    };
 };
 
 const money = cents => {
     const value = Number(cents ?? 0);
-    if (!Number.isSafeInteger(value)) throw new Error('Dashboard money exceeds safe numeric precision.');
+    if (!Number.isSafeInteger(value)) {
+        throw new Error('Dashboard money exceeds safe numeric precision.');
+    }
     return value / 100;
+};
+
+const buildSalesTrend = (range, trendRows) => {
+    const rowsByDay = new Map(trendRows.map(row => [row._id, row]));
+    const trend = [];
+    const lastDay = Math.floor((range.end + manilaOffset) / day) * day - manilaOffset;
+
+    for (let date = range.start; date <= lastDay; date += day) {
+        const key = new Date(date + manilaOffset).toISOString().slice(0, 10);
+        const row = rowsByDay.get(key);
+        trend.push({
+            date: key,
+            sales: money(row?.cents),
+            paidOrders: row?.paidOrders || 0
+        });
+    }
+    return trend;
+};
+
+const buildTopProducts = rows => {
+    return rows.map(row => ({
+        productId: row._id.productId ?? null,
+        name: row.name,
+        quantitySold: row.quantitySold,
+        sales: money(row.cents)
+    }));
 };
 
 export const getDashboardOverview = async (range) => {
@@ -139,29 +205,34 @@ export const getDashboardOverview = async (range) => {
     const summary = sales?.summary[0];
     const quality = sales?.quality[0];
     const orderStatusCounts = Object.fromEntries((current?.statuses || []).map(row => [row._id, row.count]));
-    const days = new Map((sales?.trend || []).map(row => [row._id, row]));
-    const salesTrend = [];
-    const lastDay = Math.floor((range.end + manilaOffset) / day) * day - manilaOffset;
-    for (let date = range.start; date <= lastDay; date += day) {
-        const key = new Date(date + manilaOffset).toISOString().slice(0, 10);
-        const row = days.get(key);
-        salesTrend.push({ date: key, sales: money(row?.cents), paidOrders: row?.paidOrders || 0 });
-    }
+    const salesTrend = buildSalesTrend(range, sales?.trend || []);
+    const undatedPaidOrders = quality?.undatedPaidOrders || 0;
+    const invalidPaidOrderSnapshots = quality?.invalidPaidOrderSnapshots || 0;
+    const paidCancelledOrders = current?.paidCancelledOrders[0]?.count || 0;
+
     return {
-        range: { ...range, start: new Date(range.start).toISOString(), end: new Date(range.end).toISOString() },
+        range: {
+            ...range,
+            start: new Date(range.start).toISOString(),
+            end: new Date(range.end).toISOString()
+        },
         currency: 'PHP',
-        summary: { totalSales: money(summary?.cents), paidOrders: summary?.paidOrders || 0,
-            awaitingApproval: orderStatusCounts[awaitingApprovalStatus] || 0, lowStockProducts: stock.count },
-        salesTrend, orderStatusCounts,
+        summary: {
+            totalSales: money(summary?.cents),
+            paidOrders: summary?.paidOrders || 0,
+            awaitingApproval: orderStatusCounts[awaitingApprovalStatus] || 0,
+            lowStockProducts: stock.count
+        },
+        salesTrend,
+        orderStatusCounts,
         recentOrders: current?.recentOrders || [],
-        topProducts: (sales?.topProducts || []).map(row => ({ productId: row._id.productId ?? null, name: row.name,
-            quantitySold: row.quantitySold, sales: money(row.cents) })),
+        topProducts: buildTopProducts(sales?.topProducts || []),
         lowStockProducts: stock.products,
         dataQuality: {
-            undatedPaidOrders: quality?.undatedPaidOrders || 0,
-            invalidPaidOrderSnapshots: quality?.invalidPaidOrderSnapshots || 0,
-            paidCancelledOrders: current?.paidCancelledOrders[0]?.count || 0,
-            salesPeriodComplete: !(quality?.undatedPaidOrders || quality?.invalidPaidOrderSnapshots)
+            undatedPaidOrders,
+            invalidPaidOrderSnapshots,
+            paidCancelledOrders,
+            salesPeriodComplete: !(undatedPaidOrders || invalidPaidOrderSnapshots)
         }
     };
 };

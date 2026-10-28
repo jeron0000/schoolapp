@@ -8,17 +8,19 @@ import paypal from '@paypal/checkout-server-sdk';
 import orderModel from '../models/orderModel.js';
 import productModel from '../models/productModel.js';
 import userModel from '../models/userModel.js';
+import categoryModel from '../models/categoryModel.js';
 import authUser from '../middleware/auth.js';
 import router from '../routes/orderRoute.js';
 import { placeOrder, placeOrderStripe, placeOrderPaypal, verifyStripe, verifyPaypal } from '../controllers/orderController.js';
 
 process.env.JWT_SECRET = 'sr1-synthetic-test-signing-key';
+process.env.PAMO_PAYMENT_MODE = 'disabled';
 
 const userId = '0123456789abcdef01234567';
 const productId = '1123456789abcdef01234567';
 const orderId = '2123456789abcdef01234567';
 const checkoutAddress = { firstName: 'Synthetic', lastName: 'Student', email: 'student@example.test', phone: '09171234567', street: '123 Campus Road', city: 'Carmona', state: 'Cavite', zipcode: '4116', country: 'Philippines' };
-const blockedMessage = 'Online payments are temporarily unavailable. Please use Pay as you claim. If you already paid online, contact PAMO for review.';
+const blockedMessage = 'Test payment could not be confirmed. Check My Orders before retrying. Contact PAMO if assistance is needed.';
 const onlineRoutes = [
     ['/Stripe', placeOrderStripe], ['/Paypal', placeOrderPaypal],
     ['/verifyStripe', verifyStripe], ['/verifyPaypal', verifyPaypal]
@@ -58,9 +60,21 @@ const server = async t => {
     };
 };
 
-test('all online exports and real routes retain one fail-closed boundary after authentication', () => {
+test('exceptional cancellation remains Admin-only and rejects student/Cashier tokens before side effects', async t => {
+    const assertUntouched = forbidSideEffects(t);
+    const send = await server(t);
+    const body = { orderId, decision: 'exception', expectedStatus: 'Approved', reason: 'Merchant error' };
+    for (const role of ['customer', 'cashier']) {
+        const result = await send('/cancellation/review', body, issueAuthToken(userId, role));
+        assert.equal(result.code, 403);
+    }
+    assert.equal((await send('/cancellation/review', body, null)).code, 401);
+    assertUntouched();
+});
+
+test('all provider routes retain authentication and callable gated handlers', () => {
     for (const [path, handler] of onlineRoutes) {
-        assert.equal(handler, placeOrderStripe);
+        assert.equal(typeof handler, 'function');
         assert.deepEqual(router.stack.find(layer => layer.route?.path === path).route.stack.map(layer => layer.handle), [authUser, handler]);
     }
 });
@@ -129,6 +143,7 @@ test('rejected callbacks preserve pending, paid, cancelled and released online r
 });
 
 test('COD still uses canonical prices, reserves once on retries and ignores injected online payment fields', async t => {
+    t.mock.method(categoryModel, 'findOne', () => ({ select() { return this; }, lean: async () => null }));
     let stock = 5;
     let saved;
     let creations = 0;
@@ -139,6 +154,7 @@ test('COD still uses canonical prices, reserves once on retries and ignores inje
         then: (resolve, reject) => Promise.resolve(saved || null).then(resolve, reject)
     }));
     t.mock.method(mongoose.connection, 'transaction', async work => work({}));
+    t.mock.method(productModel, 'findOne', () => ({ lean: async () => null }));
     t.mock.method(productModel, 'findById', () => ({ session() { return this; }, lean: async () => ({
         name: 'Synthetic uniform', price: 225, image: [], category: 'Men', subCategory: 'BSIT', sizes: ['M'], inventory: { M: stock }
     }) }));
@@ -153,6 +169,12 @@ test('COD still uses canonical prices, reserves once on retries and ignores inje
         saved = { ...data, _id: orderId, status: 'Order Placed' };
         return [saved];
     });
+    t.mock.method(userModel, 'findById', owner => ({
+        select() { return this; },
+        lean: async () => owner === userId
+            ? { _id: userId, name: 'Synthetic Student', email: 'student@example.test', academicProgram: 'BSIT', role: 'customer' }
+            : null
+    }));
     t.mock.method(userModel, 'findByIdAndUpdate', async (owner, update) => {
         assert.equal(owner, userId);
         assert.deepEqual(update, { cartData: {} });
@@ -188,6 +210,6 @@ test('customer history still exposes stored online records using authenticated o
     const send = await server(t);
     const result = await send('/userorders', { userId: productId });
     assert.equal(result.body.success, true);
-    assert.deepEqual(result.body.orders, JSON.parse(JSON.stringify(records.map(record => ({ ...record, refundSummary: null })))));
+    assert.deepEqual(result.body.orders, JSON.parse(JSON.stringify(records.map(record => ({ ...record, refundSummary: null, cancellationMode: null })))));
     assert.equal(mutate.mock.callCount(), 0);
 });

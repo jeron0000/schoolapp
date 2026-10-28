@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 
 export const HERO_ALT_TEXT_LIMIT = 250;
+// One reserved document in the existing collection stores the fallback override.
+export const HERO_FALLBACK_ID = '000000000000000000000000';
+export const HERO_CAROUSEL_FILTER = { role: { $ne: 'fallback' } };
 export const HERO_PUBLIC_ID_PATTERN = /^pamo\/hero\/[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/;
 export const validHeroAltText = value => typeof value === 'string' && value.trim().length > 0 && value.length <= HERO_ALT_TEXT_LIMIT && !/[\u0000-\u001f\u007f\u2028\u2029]/.test(value);
 export const secureHeroUrl = value => {
@@ -9,6 +12,7 @@ export const secureHeroUrl = value => {
 };
 
 const heroSlideSchema = new mongoose.Schema({
+    role: { type: String, enum: ['carousel', 'fallback'], default: 'carousel' },
     imageUrl: { type: String, required: true, validate: secureHeroUrl },
     imagePublicId: { type: String, required: true, unique: true, match: HERO_PUBLIC_ID_PATTERN },
     altText: { type: String, required: true, trim: true, maxlength: HERO_ALT_TEXT_LIMIT, validate: validHeroAltText },

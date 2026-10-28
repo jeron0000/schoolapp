@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Upload, X } from 'lucide-react'
 import { containDialogFocus } from '../utils/dialogFocus'
 
-const fieldClass = 'hero-manager-field'
+const fieldClass = 'hero-manager-field min-h-[50px] w-full min-w-0 rounded-[7px] border border-[color:var(--pamo-color-border-input)] bg-[var(--pamo-color-surface-subtle)] px-3.5 py-3 text-[length:var(--pamo-staff-body)] leading-[var(--pamo-staff-leading)] text-[color:var(--pamo-color-text-primary)] placeholder:text-[color:var(--pamo-color-text-secondary)]'
+const primaryClass = 'hero-manager-primary inline-flex min-h-12 min-w-11 shrink-0 items-center justify-center gap-2 rounded-[7px] border border-transparent bg-[var(--pamo-color-brand-yellow)] px-6 py-3 text-[13px] font-semibold text-slate-900 [&:not(:disabled):hover]:bg-[var(--pamo-color-brand-hover)]'
+const controlClass = 'hero-manager-control inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-[color:var(--pamo-color-border-input)] bg-[var(--pamo-color-surface-subtle)] px-3.5 py-2.5 text-[length:var(--pamo-staff-small)] font-medium leading-[var(--pamo-staff-compact-leading)] text-[color:var(--pamo-color-text-primary)] [&:not(:disabled):hover]:bg-[var(--pamo-color-surface-default)]'
 const fileError = file => {
   if (!file) return 'Choose an image to upload.'
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return 'Choose a JPEG, PNG or WEBP image.'
@@ -10,7 +12,7 @@ const fileError = file => {
   return ''
 }
 
-const HeroImageForm = ({ image, busy, unavailable, onClose, onSave }) => {
+const HeroImageForm = ({ image, fallback = false, busy, unavailable, onClose, onSave }) => {
   const [file, setFile] = useState(null)
   const [altText, setAltText] = useState(image?.altText || '')
   const [isActive, setIsActive] = useState(image?.isActive || false)
@@ -69,50 +71,61 @@ const HeroImageForm = ({ image, busy, unavailable, onClose, onSave }) => {
     if (result && !result.ok) setError(result.message)
   }
 
+  let submitLabel = image ? 'Save changes' : 'Add Hero Image'
+  if (fallback) submitLabel = 'Replace Image'
+  if (busy) submitLabel = 'Saving…'
+  let heading = image ? 'Edit Image Details' : 'Add Hero Image'
+  let description = image ? 'Update accessibility text or visibility. The image file stays unchanged.' : 'Choose a photo and describe its purpose on the storefront.'
+  if (fallback) {
+    heading = 'Replace Default Hero Image'
+    description = 'Used only when no usable carousel images remain. The bundled original stays available for reset.'
+  }
+
   return (
     <dialog ref={dialog} tabIndex={-1} aria-labelledby='hero-form-heading' aria-busy={busy} onKeyDown={containDialogFocus} onCancel={event => { event.preventDefault(); if (!busy) onClose() }} className='hero-form-dialog'>
-      <header className='hero-form-header'>
+      <header className='hero-form-header grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[color:var(--pamo-color-border-default)] p-6'>
         <div className='hero-form-top'>
           <button type='button' className='hero-form-back' onClick={onClose} disabled={busy}><ArrowLeft size={14} aria-hidden='true' />Hero Images</button>
-          <button type='button' className='hero-dialog-close' aria-label='Close hero image form' onClick={onClose} disabled={busy}><X size={18} aria-hidden='true' /></button>
+          <button type='button' className='hero-dialog-close col-start-2 row-start-1 flex h-11 w-11 items-center justify-center rounded-md border border-[color:var(--pamo-color-border-input)] bg-[var(--pamo-color-surface-subtle)]' aria-label='Close hero image form' onClick={onClose} disabled={busy}><X size={18} aria-hidden='true' /></button>
         </div>
-        <div className='hero-form-heading'>
-          <h2 id='hero-form-heading'>{image ? 'Edit Image Details' : 'Add Hero Image'}</h2>
-          <p>{image ? 'Update accessibility text or visibility. The image file stays unchanged.' : 'Choose a photo and describe its purpose on the storefront.'}</p>
+        <div className='hero-form-heading col-start-1 row-start-1 min-w-0'>
+          <h2 id='hero-form-heading' className='text-2xl font-semibold leading-tight tracking-[-.02em]'>{heading}</h2>
+          <p className='mt-2.5 text-xs text-[color:var(--pamo-color-text-secondary)]'>{description}</p>
         </div>
       </header>
       <form onSubmit={submit}>
-        <div className='hero-form-body'>
-          {image || file ? <figure className='hero-form-preview'>
+        <div className='hero-form-body min-h-0 overflow-y-auto overscroll-contain p-6'>
+          {image || file ? <figure className='hero-form-preview rounded-lg border border-[color:var(--pamo-color-border-default)] bg-[var(--pamo-color-surface-subtle)] p-3'>
             <img
               ref={image ? undefined : preview}
               src={image ? image.imageUrl : undefined}
               alt={image ? image.altText : 'Selected hero image preview'}
               onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+              className='aspect-video w-full rounded-md bg-[var(--pamo-color-surface-default)] object-contain'
             />
-            <figcaption>{image ? 'Current image file stays unchanged.' : file.name + ' · Not uploaded yet'}{dimensions && ` · ${dimensions.width} × ${dimensions.height}px`}</figcaption>
+            <figcaption className='mt-3 break-words text-[11px] text-[color:var(--pamo-color-text-secondary)]'>{image ? 'Current image file stays unchanged.' : file.name + ' · Not uploaded yet'}{dimensions && ` · ${dimensions.width} × ${dimensions.height}px`}</figcaption>
           </figure> : null}
-          {!image && <div className={file ? 'hero-form-reselect' : 'hero-form-upload'}>
+          {!image && <div className={file ? 'hero-form-reselect mt-3' : 'hero-form-upload flex min-h-40 flex-col items-center justify-center gap-3 rounded-lg bg-[var(--pamo-color-surface-subtle)] p-5'}>
             {!file && <><Upload size={32} aria-hidden='true' /><h3>No image selected</h3></>}
-            <label htmlFor='hero-file' className='hero-manager-primary'>
+            <label htmlFor='hero-file' className={primaryClass}>
               <input ref={firstField} id='hero-file' type='file' accept='image/jpeg,image/png,image/webp' disabled={busy} onChange={selectFile} aria-describedby='hero-file-help' className='sr-only' />
               {file ? 'Choose another image' : 'Choose image'}
             </label>
             {!file && <p>Uploaded when you save</p>}
           </div>}
-          <div className='hero-form-file-help'>
+          <div className='hero-form-file-help mt-4 text-[11px] text-[color:var(--pamo-color-text-secondary)]'>
             {image ? <p>Photo cannot be replaced from this form.</p> : <>
               <p id='hero-file-help'>JPEG, PNG or WEBP · Up to 5 MiB. Uploaded only when you save.</p>
               <p>Recommended: a wide landscape photo for the storefront hero.</p>
             </>}
           </div>
-          <div className='hero-form-alt'>
-            <label htmlFor='hero-alt'>Alt text</label>
+          <div className='hero-form-alt mt-5'>
+            <label htmlFor='hero-alt' className='mb-2 block font-semibold'>Alt text</label>
             <input ref={image ? firstField : undefined} id='hero-alt' type='text' placeholder='Describe what the image shows' value={altText} onChange={event => setAltText(event.target.value)} required maxLength={250} disabled={busy} aria-describedby='hero-alt-help' className={fieldClass} />
             <p id='hero-alt-help'>Describe meaningful image content · Max 250 characters.</p>
           </div>
-          <fieldset className='hero-form-visibility'>
-            <legend>Storefront visibility</legend>
+          {!fallback && <fieldset className='hero-form-visibility mt-6'>
+            <legend className='text-[length:var(--pamo-staff-small)] font-semibold uppercase text-[color:var(--pamo-color-text-secondary)]'>Storefront visibility</legend>
             <label className='hero-manager-switch-label'>
               <span className='hero-manager-switch'>
                 <input type='checkbox' role='switch' aria-label='Active' checked={isActive} disabled={busy} onChange={event => setIsActive(event.target.checked)} />
@@ -121,13 +134,13 @@ const HeroImageForm = ({ image, busy, unavailable, onClose, onSave }) => {
               <span>{isActive ? 'Active' : 'Inactive'}</span>
             </label>
             <p>Active images become eligible for the carousel after saving.</p>
-          </fieldset>
+          </fieldset>}
           {error && <p role='alert' className='hero-manager-error'>{error}</p>}
           {unavailable && <p role='alert' className='hero-manager-warning'>This image cannot be edited, or the list could not be refreshed. Close this form and check the managed list.</p>}
         </div>
-        <footer className='hero-form-footer'>
-          <button type='button' disabled={busy} onClick={onClose} className='hero-manager-control'>Cancel</button>
-          <button type='submit' disabled={busy || unavailable} className='hero-manager-primary'>{busy ? 'Saving…' : image ? 'Save changes' : 'Add Hero Image'}</button>
+        <footer className='hero-form-footer flex shrink-0 gap-3 border-t border-[color:var(--pamo-color-border-default)] px-6 py-4'>
+          <button type='button' disabled={busy} onClick={onClose} className={controlClass}>Cancel</button>
+          <button type='submit' disabled={busy || unavailable} className={primaryClass}>{submitLabel}</button>
         </footer>
       </form>
     </dialog>

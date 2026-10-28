@@ -12,10 +12,12 @@ const output = await build({
     import { renderToStaticMarkup } from 'react-dom/server';
     import { MemoryRouter } from 'react-router-dom';
     import Cart from './src/pages/Cart.jsx';
+    import PlaceOrder from './src/pages/PlaceOrder.jsx';
     import { ShopContext } from './src/context/shopContext.js';
     export { default as checkout } from './src/pages/PlaceOrder.jsx';
     export { default as cart } from './src/pages/Cart.jsx';
     export const cartHTML = (context, theme) => renderToStaticMarkup(<MemoryRouter><div data-theme={theme}><ShopContext.Provider value={context}><Cart /></ShopContext.Provider></div></MemoryRouter>);
+    export const checkoutHTML = context => renderToStaticMarkup(<MemoryRouter><ShopContext.Provider value={context}><PlaceOrder /></ShopContext.Provider></MemoryRouter>);
   ` },
   bundle: true, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', write: false,
   resolveExtensions: ['.js', '.jsx', '.json'], loader: { '.css': 'empty' },
@@ -32,8 +34,10 @@ const react = compiled.require('react');
 const id = '0123456789abcdef01234567';
 const product = { _id: id, name: 'Synthetic uniform', price: 225, image: [], sizes: ['M'], inventory: { M: 10 } };
 const context = overrides => ({ products: [product], cartItems: { [id]: { M: 1 } }, currency: '$', delivery_fee: 10,
-  getCartAmount: () => 225, backendUrl: 'https://api.example.test', token: 'synthetic-only', navigate() {},
-  getProductsData: async () => {}, updateQuantity: async () => {}, setCartItems() {}, ...overrides });
+  getCartAmount: () => 225, backendUrl: 'https://api.example.test', token: 'synthetic-only', userId: 'student-1', navigate() {},
+  getProductsData: async () => [product], updateQuantity: async () => {}, setCartItems() {},
+  studentProfile: { name: 'Synthetic Student', email: 'student@example.test', academicProgram: 'BSIT' },
+  profileLoading: false, profileError: '', ...overrides });
 const find = (element, predicate) => {
   if (!react.isValidElement(element)) return null;
   if (predicate(element)) return element;
@@ -41,7 +45,15 @@ const find = (element, predicate) => {
   return null;
 };
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
-const hooks = (t, value) => {
+const storageFixture = (t, values) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    value: { getItem: key => values[key] ?? null, setItem() {}, removeItem() {} }
+  });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'sessionStorage', previous); else Reflect.deleteProperty(globalThis, 'sessionStorage'); });
+};
+const hooks = (t, value, initialStorage = {}) => {
   t.mock.method(react, 'useContext', () => value);
   t.mock.method(react, 'useMemo', calculate => calculate());
   t.mock.method(react, 'useCallback', callback => callback);
@@ -51,8 +63,11 @@ const hooks = (t, value) => {
   t.mock.method(compiled.require('react-toastify').toast, 'error', () => {});
   const storage = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
   const storageChanges = [];
+  const storageValues = new Map(Object.entries(initialStorage));
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
-    getItem: () => null, setItem: () => storageChanges.push('write'), removeItem: () => storageChanges.push('remove')
+    getItem: key => storageValues.get(key) ?? null,
+    setItem: (key, value) => { storageValues.set(key, value); storageChanges.push('write'); },
+    removeItem: key => { storageValues.delete(key); storageChanges.push('remove'); }
   } });
   t.after(() => { if (storage) Object.defineProperty(globalThis, 'sessionStorage', storage); else Reflect.deleteProperty(globalThis, 'sessionStorage'); });
   return storageChanges;
@@ -105,6 +120,58 @@ test('existing Cart checkout interaction is disabled while persistence is pendin
   }
 });
 
+test('Cart totals and availability use only the persisted selected variants', t => {
+  const selection = {
+    known: [JSON.stringify([id, 'M']), JSON.stringify([id, 'L'])],
+    selected: [JSON.stringify([id, 'L'])]
+  };
+  storageFixture(t, { 'pamo-cart-selection:student-1': JSON.stringify(selection) });
+  const html = compiled.exports.cartHTML(context({
+    products: [{ ...product, sizes: ['M', 'L'], inventory: { M: 0, L: 10 } }],
+    cartItems: { [id]: { M: 1, L: 2 } }
+  }), 'dark');
+
+  assert.match(html, /Selected: 2 items/);
+  assert.match(html, /Checkout \(2 items\)/);
+  assert.match(html, /aria-disabled="false"[^>]*href="\/place-order"/);
+});
+
+test('Cart and selected checkout display individual listing items with original IDs', t => {
+  const secondId = '1123456789abcdef01234567';
+  const selection = {
+    known: [JSON.stringify([id, 'M']), JSON.stringify([secondId, 'M'])],
+    selected: [JSON.stringify([secondId, 'M'])]
+  };
+  storageFixture(t, { 'pamo-cart-selection:student-1': JSON.stringify(selection) });
+  const value = context({
+    products: [{ ...product, optionLabel: 'Classic Shirt' }, { ...product, _id: secondId, name: 'Washday Shirt', optionLabel: 'Washday Shirt', price: 350 }],
+    cartItems: { [id]: { M: 1 }, [secondId]: { M: 2 } }
+  });
+  for (const theme of ['light', 'dark']) {
+    const html = compiled.exports.cartHTML(value, theme);
+    assert.match(html, /Item · Classic Shirt/);
+    assert.match(html, /Item · Washday Shirt/);
+    assert.match(html, new RegExp(`/product/${secondId}`));
+  }
+  const checkout = compiled.exports.checkoutHTML(value);
+  assert.match(checkout, /Item · Washday Shirt/);
+  assert.doesNotMatch(checkout, /Item · Classic Shirt/);
+  assert.deepEqual(value.cartItems[id], { M: 1 });
+});
+
+test('Cart disables checkout when every variant is deselected', t => {
+  const selection = {
+    known: [JSON.stringify([id, 'M'])],
+    selected: []
+  };
+  storageFixture(t, { 'pamo-cart-selection:student-1': JSON.stringify(selection) });
+  const html = compiled.exports.cartHTML(context(), 'light');
+
+  assert.match(html, /Selected: 0 items/);
+  assert.match(html, /Checkout \(0 items\)/);
+  assert.match(html, /aria-disabled="true"[^>]*href="\/place-order"/);
+});
+
 test('failed cart restoration uses an accessible persistent error/reload action instead of an empty-cart claim', () => {
   for (const theme of ['light', 'dark']) {
     const html = compiled.exports.cartHTML(context({ cartItems: {}, cartReady: false, cartError: 'Synthetic cart unavailable.', reloadCart() {} }), theme);
@@ -122,6 +189,67 @@ test('checkout submission refuses an unsynchronized cart before digest, API or c
   const form = find(compiled.exports.checkout(), element => element.type === 'form');
   await form.props.onSubmit({ preventDefault() {} });
   assert.equal(request.mock.callCount(), 0);
+  assert.deepEqual(storage, []);
+});
+
+test('online checkout policy is prepared without enabling frozen payment methods', async t => {
+  hooks(t, context());
+  t.mock.method(react, 'useState', initial => [initial === 'cod' ? 'stripe' : initial, () => {}]);
+  const tree = compiled.exports.checkout();
+  const notice = find(tree, element => element.type === 'p' && react.Children.toArray(element.props.children)
+    .some(child => typeof child === 'string' && child.includes('After online payment')));
+  assert.ok(notice);
+  assert.equal(find(notice, element => element.type?.name === 'Link' || element.props.to === '/contact').props.to, '/contact');
+  assert.equal(find(tree, element => element.type === 'input' && element.props.value === 'stripe').props.disabled, true);
+  assert.equal(find(tree, element => element.type === 'input' && element.props.value === 'paypal').props.disabled, true);
+  t.mock.method(compiled.require('axios'), 'post', () => assert.fail('Online processing remains disabled'));
+  await find(tree, element => element.type === 'form').props.onSubmit({ preventDefault() {} });
+});
+
+test('checkout uses read-only account identity instead of client contact or address fields', t => {
+  hooks(t, context({
+    productCategories: [{ code: 'BSIT', name: 'Information Technology', scope: 'program' }]
+  }));
+  const tree = compiled.exports.checkout();
+  assert.equal(find(tree, element => element.type === 'input' && element.props.name === 'firstName'), null);
+  assert.equal(find(tree, element => element.type === 'input' && element.props.name === 'street'), null);
+  assert.ok(find(tree, element => element.type === 'dd' && element.props.children === 'Synthetic Student'));
+  assert.ok(find(tree, element => element.type === 'dd' && element.props.children === 'Information Technology'));
+});
+
+test('checkout blocks submission and links to My Account when the program is missing', t => {
+  hooks(t, context({
+    studentProfile: { name: 'Synthetic Student', email: 'student@example.test', academicProgram: null }
+  }));
+  const tree = compiled.exports.checkout();
+  const submit = find(tree, element => element.type === 'button' && element.props.type === 'submit');
+  const accountLink = find(tree, element => element.props.to === '/account');
+  assert.equal(submit.props.disabled, true);
+  assert.ok(accountLink);
+});
+
+test('checkout refreshes prices and requires review before submitting a changed total', async t => {
+  const refreshedProduct = { ...product, price: 250 };
+  const lease = {
+    snapshot: { cartData: { [id]: { M: 1 } }, cartVersions: { [id]: { M: 1 } } },
+    isCurrent: () => true,
+    complete: t.mock.fn(),
+    finish: t.mock.fn()
+  };
+  const storage = hooks(t, context({
+    beginCartCheckout: () => lease,
+    getProductsData: async () => [refreshedProduct]
+  }));
+  const request = t.mock.method(compiled.require('axios'), 'post', () => {
+    assert.fail('Changed prices must be reviewed before checkout');
+  });
+
+  const form = find(compiled.exports.checkout(), element => element.type === 'form');
+  await form.props.onSubmit({ preventDefault() {} });
+
+  assert.equal(request.mock.callCount(), 0);
+  assert.equal(lease.complete.mock.callCount(), 0);
+  assert.equal(lease.finish.mock.callCount(), 1);
   assert.deepEqual(storage, []);
 });
 
@@ -163,7 +291,10 @@ test('confirmed COD submission sends revision evidence, refreshes the cart and r
   const request = t.mock.method(compiled.require('axios'), 'post', async (url, data, options) => {
     assert.equal(url, 'https://api.example.test/api/order/place');
     assert.equal(data.amount, 235);
+    assert.equal(Object.hasOwn(data, 'address'), false);
+    assert.equal(Object.hasOwn(data, 'student'), false);
     assert.equal(data.items[0].quantity, 1);
+    assert.deepEqual(data.pricingQuote, [{ _id: id, size: 'M', price: 225 }]);
     assert.deepEqual(data.checkoutCart, snapshot);
     assert.equal(options.headers.token, 'synthetic-only');
     return { data: { success: true } };
@@ -174,8 +305,70 @@ test('confirmed COD submission sends revision evidence, refreshes the cart and r
   assert.equal(cartChanges.mock.callCount(), 0);
   assert.equal(lease.complete.mock.callCount(), 1);
   assert.deepEqual(navigation.mock.calls[0].arguments, ['/orders']);
-  assert.deepEqual(storage, ['write', 'remove']);
+  assert.deepEqual(storage, ['write', 'remove', 'write']);
   assert.equal(lease.finish.mock.callCount(), 1);
+});
+
+test('checkout submits only selected variants while retaining full revision evidence', async t => {
+  const secondProduct = { ...product, _id: '2123456789abcdef01234567', name: 'Synthetic accessory', price: 100 };
+  const cartItems = { [id]: { M: 1, L: 2 }, [secondProduct._id]: { M: 1 } };
+  const snapshot = {
+    cartData: structuredClone(cartItems),
+    cartVersions: { [id]: { M: 4, L: 2 }, [secondProduct._id]: { M: 1 } }
+  };
+  const selection = {
+    known: [JSON.stringify([id, 'M']), JSON.stringify([id, 'L']), JSON.stringify([secondProduct._id, 'M'])],
+    selected: [JSON.stringify([id, 'L'])]
+  };
+  const value = context({
+    products: [product, secondProduct],
+    cartItems,
+    getProductsData: async () => [product, secondProduct],
+    beginCartCheckout: () => ({ snapshot, isCurrent: () => true, complete: async () => {}, finish() {} })
+  });
+  hooks(t, value, { 'pamo-cart-selection:student-1': JSON.stringify(selection) });
+  const request = t.mock.method(compiled.require('axios'), 'post', async (_url, body) => {
+    assert.deepEqual(body.items.map(item => [item._id, item.size, item.quantity]), [[id, 'L', 2]]);
+    assert.equal(body.amount, 460);
+    assert.deepEqual(body.checkoutCart, snapshot);
+    return { data: { success: true } };
+  });
+
+  await find(compiled.exports.checkout(), element => element.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.equal(request.mock.callCount(), 1);
+});
+
+test('enabled demo checkout sends only selected items and keeps cart data until simulated success', async t => {
+  const complete = t.mock.fn();
+  const navigate = t.mock.fn();
+  const value = context({
+    navigate,
+    beginCartCheckout: () => ({
+      snapshot: { cartData: { [id]: { M: 1 } }, cartVersions: { [id]: { M: 2 } } },
+      isCurrent: () => true, complete, finish() {}
+    })
+  });
+  hooks(t, value);
+  let stateIndex = 0;
+  t.mock.method(react, 'useState', initial => {
+    const index = stateIndex++;
+    if (index === 0) return ['paypal', () => {}];
+    if (index === 1) return [true, () => {}];
+    return [initial, () => {}];
+  });
+  const post = t.mock.method(compiled.require('axios'), 'post', async (url, data) => {
+    assert.equal(url, 'https://api.example.test/api/order/demo/place');
+    assert.equal(data.demoProvider, 'paypal');
+    assert.equal(data.amount, 235);
+    return { data: { success: true, orderId: 'demo-order-1' } };
+  });
+  const tree = compiled.exports.checkout();
+  assert.equal(find(tree, element => element.type === 'input' && element.props.value === 'paypal').props.disabled, false);
+  await find(tree, element => element.type === 'form').props.onSubmit({ preventDefault() {} });
+  assert.equal(post.mock.callCount(), 1);
+  assert.equal(complete.mock.callCount(), 0);
+  assert.deepEqual(value.cartItems[id], { M: 1 });
+  assert.deepEqual(navigate.mock.calls[0].arguments, ['/demo-payment/demo-order-1']);
 });
 
 test('checkout submits the confirmed lease snapshot rather than an older render and fingerprints revisions', async t => {

@@ -48,6 +48,7 @@ const harness = (t, overrides = {}) => {
     const state = { user: { _id: userId, cartData: {}, ...overrides }, product: { _id: itemId, sizes: ['M', 'L', 'One Size'], inventory: { M: 100, L: 100, 'One Size': 10 } }, beforeWrite: null };
     const writes = [];
     t.mock.method(userModel, 'findById', id => ({ select() { return this; }, lean: async () => id === userId ? structuredClone(state.user) : null }));
+    t.mock.method(productModel, 'findOne', () => ({ lean: async () => null }));
     t.mock.method(productModel, 'findById', () => ({ lean: async () => structuredClone(state.product) }));
     t.mock.method(userModel, 'findOneAndUpdate', (filter, update, options) => ({ lean: async () => {
         state.beforeWrite?.();
@@ -108,6 +109,21 @@ test('valid quantities, dynamic sizes, zero removal and deleted-product cleanup 
     assert.deepEqual((await call(getUserCart, { userId })).body.cartData, removed.body.cartData);
     assert.equal((await call(updateCart, body({ quantity: 0, expectedVersion: 3, expectedQuantity: 0 }))).body.success, true);
     assert.equal(h.writes.length, 4);
+});
+
+test('custom product sizes remain server-authoritative when added to cart', async t => {
+    const h = harness(t);
+    h.state.product = {
+        _id: itemId,
+        sizes: ['4XL'],
+        inventory: { '4XL': 2 }
+    };
+
+    const result = await call(addToCart, body({ size: '4XL' }));
+
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.cartData[itemId]['4XL'], 1);
+    assert.equal(h.writes.length, 1);
 });
 
 test('same-quantity and absent-entry removal intents still check atomic revisions instead of acknowledging a stale read', async t => {

@@ -26,7 +26,7 @@ const output = await build({
     export { containDialogFocus } from './src/utils/dialogFocus.js';
   ` },
   bundle: true, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', write: false,
-  loader: { '.css': 'empty' },
+  loader: { '.css': 'empty', '.jpg': 'dataurl' },
   define: { 'import.meta.env.VITE_BACKEND_URL': '"https://api.example.test"' }
 });
 const compiled = new Module(path.join(admin, 'hero-v2-test.cjs'));
@@ -51,11 +51,6 @@ const walk = (node, visit) => {
 const find = (tree, predicate) => {
   let found;
   walk(tree, node => { if (!found && predicate(node)) found = node; });
-  return found;
-};
-const all = (tree, predicate) => {
-  const found = [];
-  walk(tree, node => { if (predicate(node)) found.push(node); });
   return found;
 };
 const slide = (id = 'a', extra = {}) => ({ _id: id, altText: 'Synthetic campus photo ' + id, imageUrl: 'https://images.example.test/' + id + '.png', isActive: false, ...extra });
@@ -272,9 +267,117 @@ test('Page preserves create, server reconciliation, ordering and metadata-only E
   assert.equal(h.card('a').props.image.isActive, true);
 });
 
+test('Page sets and changes the default through one protected action and reconciles persisted order', async t => {
+  const h = mount(t, 'Page');
+  h.requests[0].resolve({ data: { success: true, slides: [slide('a', { isActive: true }), slide('b')] } });
+  await settle(); h.commit();
+  assert.equal(h.card('a').props.isDefault, true);
+  assert.equal(h.card('b').props.isDefault, false);
+  const saving = h.card('b').props.onSetDefault('b');
+  await h.card('b').props.onSetDefault('b');
+  assert.equal(h.requests.length, 2, 'Duplicate submissions are blocked');
+  assert.equal(h.requests[1].method, 'patch');
+  assert(h.requests[1].url.endsWith('/api/hero/b/default'));
+  assert.equal(h.requests[1].headers.token, 'synthetic-token');
+  h.requests[1].resolve({ data: { success: true } });
+  await settle();
+  h.requests[2].resolve({ data: { success: true, slides: [slide('b', { isActive: true }), slide('a', { isActive: true })] } });
+  await saving; h.commit();
+  assert.equal(h.card('b').props.isDefault, true);
+  assert.equal(h.card('a').props.isDefault, false);
+  h.commit();
+  assert.equal(h.requests.length, 3, 'Ordinary rerenders do not reset or refetch the default');
+});
+
+test('default controls identify one current default and protect deletion-pending images', () => {
+  let selected;
+  const image = slide('a', { isActive: true });
+  const props = { image, index: 0, total: 1, onSetDefault: id => { selected = id; } };
+  let tree = compiled.exports.Item(props);
+  const button = () => find(tree, node => node.props['aria-label'] === 'Set as default: ' + image.altText);
+  button().props.onClick();
+  assert.equal(selected, 'a');
+  tree = compiled.exports.Item({ ...props, isDefault: true });
+  assert.equal(button().props.disabled, true);
+  assert(find(tree, node => node.type === 'span' && React.Children.toArray(node.props.children).includes('Default image')));
+  tree = compiled.exports.Item({ ...props, image: { ...image, deletionPending: true } });
+  assert.equal(button().props.disabled, true);
+});
+
+test('Page manages the built-in fallback separately with replacement, reload and reset', async t => {
+  const h = mount(t, 'Page');
+  const carousel = [slide('a', { isActive: true }), slide('b')];
+  h.requests[0].resolve({ data: { success: true, slides: carousel, fallback: null } });
+  await settle(); h.commit();
+  const original = find(h.tree, node => node.type === 'img').props.src;
+  assert.match(original, /^data:image\/jpeg/);
+  assert.equal(h.card('a').props.isDefault, true);
+  h.input('hero-manager-replace-fallback').props.onClick(); h.commit();
+  let form = find(h.tree, node => typeof node.props.onSave === 'function');
+  assert.equal(form.props.fallback, true);
+  const values = { image: new File(['synthetic'], 'replacement.png', { type: 'image/png' }), altText: 'Replacement campus photo' };
+  const replacing = form.props.onSave(values);
+  await form.props.onSave(values);
+  assert.equal(h.requests.length, 2, 'Duplicate replacement is blocked');
+  assert.equal(h.requests[1].method, 'put');
+  assert(h.requests[1].url.endsWith('/api/hero/fallback'));
+  assert.equal(h.requests[1].headers.token, 'synthetic-token');
+  assert.deepEqual([...h.requests[1].data.keys()], ['image', 'altText']);
+  h.requests[1].resolve({ data: { success: true } }); await settle();
+  const replacement = slide('fallback', { altText: values.altText });
+  h.requests[2].resolve({ data: { success: true, slides: carousel, fallback: replacement } });
+  await replacing; h.commit();
+  assert.equal(find(h.tree, node => node.type === 'img').props.src, replacement.imageUrl);
+  assert.equal(h.card('a').props.isDefault, true, 'Carousel first slide remains unchanged');
+  assert.equal(find(h.tree, node => typeof node.props.onSave === 'function'), undefined);
+  const resetButton = find(h.tree, node => node.type === 'button' && node.props.children === 'Reset to Original');
+  resetButton.props.onClick(); h.commit();
+  const confirmation = find(h.tree, node => typeof node.props.onConfirm === 'function');
+  assert.equal(confirmation.props.resetToOriginal, true);
+  const resetting = confirmation.props.onConfirm(replacement._id);
+  assert.equal(h.requests[3].method, 'delete');
+  assert(h.requests[3].url.endsWith('/api/hero/fallback'));
+  h.requests[3].resolve({ data: { success: true } }); await settle();
+  h.requests[4].resolve({ data: { success: true, slides: carousel, fallback: null } });
+  await resetting; h.commit();
+  assert.equal(find(h.tree, node => node.type === 'img').props.src, original);
+  assert.equal(h.card('a').props.isDefault, true);
+  // A fresh page mount reads the persisted replacement rather than local-only state.
+  h.unmount();
+  const refreshed = mount(t, 'Page');
+  refreshed.requests[0].resolve({ data: { success: true, slides: carousel, fallback: replacement } });
+  await settle(); refreshed.commit();
+  assert.equal(find(refreshed.tree, node => node.type === 'img').props.src, replacement.imageUrl);
+  refreshed.unmount();
+});
+
+test('fallback form reuses upload validation and accessible dialog lifecycle without carousel controls', async t => {
+  const h = mount(t, 'Form', { fallback: true });
+  assert.equal(find(h.tree, node => node.props.role === 'switch'), undefined);
+  assert.equal(h.input('hero-form-heading').props.children, 'Replace Default Hero Image');
+  assert.equal(document.body.style.overflow, 'hidden');
+  h.select(file()); h.change('hero-alt', 'Campus fallback');
+  await h.submit(); h.commit();
+  assert.equal(h.saves.length, 1);
+  assert.equal(h.saves[0].altText, 'Campus fallback');
+  h.tree.props.onCancel({ preventDefault() {} });
+  assert.equal(h.closed, 1);
+  h.unmount();
+  assert.equal(h.focus.at(-1), 'opener');
+  assert.equal(document.body.style.overflow, 'auto');
+});
+
+test('fallback reset confirmation leaves carousel images untouched on Cancel', t => {
+  const h = mount(t, 'Delete', { resetToOriginal: true });
+  assert.equal(h.input('hero-delete-heading').props.children, 'Restore original Hero image?');
+  const cancel = find(h.tree, node => node.type === 'button' && node.props.children === 'Cancel');
+  cancel.props.onClick();
+  assert.equal(h.closed, 1); assert.deepEqual(h.deleted, []);
+});
+
 test('Delete confirms only the selected record and retains recoverable cleanup errors', async t => {
   const h = mount(t, 'Delete');
-  const confirm = () => find(h.tree, node => node.props.className === 'hero-manager-delete');
+  const confirm = () => find(h.tree, node => node.props.className?.split(' ').includes('hero-manager-delete'));
   await confirm().props.onClick(); h.commit();
   assert.deepEqual(h.deleted, ['a']);
   assert(find(h.tree, node => node.props.role === 'alert'));

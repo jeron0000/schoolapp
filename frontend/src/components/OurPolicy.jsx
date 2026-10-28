@@ -1,75 +1,61 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import HomeSectionHeading from './HomeSectionHeading'
-import { ArrowLeftRight, CalendarDays, Headphones } from 'lucide-react'
+import { Ruler, Package, Headphones } from 'lucide-react'
+
+const policySectionClass = [
+  'mt-14 scroll-mt-6',
+  'md:mt-[72px]',
+].join(' ')
+
+const policyGridClass = [
+  'mt-6 grid items-stretch gap-4',
+  'md:mt-7 md:grid-cols-3 md:gap-5',
+].join(' ')
+
+const policyCardClass = [
+  'flex h-full min-w-0 scroll-mt-6 items-start gap-4 rounded-lg border p-5',
+  'border-[color:var(--pamo-color-border-default)] bg-[var(--pamo-color-surface-default)]',
+  'transition-colors hover:border-[color:var(--pamo-color-border-input)] hover:bg-[var(--pamo-color-surface-subtle)]',
+  'md:p-6',
+].join(' ')
+
+const policyMarkClass = [
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
+  'bg-[var(--pamo-color-surface-subtle)] text-[color:var(--pamo-color-accent-text)]',
+].join(' ')
+
+const policies = [
+  ['exchange-information', Ruler, 'Uniform Size Guide', 'Compare measurements and find your size before ordering.'],
+  ['return-information', Package, 'Order & Claiming Updates', 'Track your order from approval to payment and claiming.'],
+  ['customer-support', Headphones, 'Customer Support', 'Contact our team for support with your order.']
+]
 
 const OurPolicy = () => {
   return (
     <section
       id='support-policies'
-      className='home-support-policies'
+      className={policySectionClass}
       aria-labelledby='support-policies-heading'
     >
       <HomeSectionHeading
         id='support-policies-heading'
-        eyebrow={
-          <>
-            <span className='home-copy-tablet'>Student services</span>
-            <span className='home-copy-desktop'>Support &amp; policies</span>
-            <span className='home-copy-mobile'>Support &amp; policies</span>
-          </>
-        }
-        title={
-          <>
-            <span className='home-copy-desktop'>Here to help throughout your order</span>
-            <span className='home-copy-tablet'>Support when you need it</span>
-            <span className='home-copy-mobile'>Here when you need help</span>
-          </>
-        }
+        eyebrow='Shopping assistance'
+        title='Here when you need help'
       />
-      <div className='home-policy-grid'>
-        {[
-          [
-            'exchange-information',
-            ArrowLeftRight,
-            'Easy Exchange Policy',
-            'Exchange information',
-            'We offer a hassle-free exchange policy.'
-          ],
-          [
-            'return-information',
-            CalendarDays,
-            '7 Days Return Policy',
-            'Return information',
-            'We provide a 7-day free return policy.'
-          ],
-          [
-            'customer-support',
-            Headphones,
-            'Customer Support',
-            'Contact the team',
-            'Contact our team for support with your order.'
-          ]
-        ].map(([id, icon, title, tabletTitle, copy]) => {
+      <div className={policyGridClass}>
+        {policies.map(([id, icon, title, copy]) => {
           const Icon = icon
           return (
-            <Link id={id} key={id} to='/contact' className='home-policy-card'>
-              <span className='home-policy-mark'>
+            <Link id={id} key={id} to='/contact' className={policyCardClass}>
+              <span className={policyMarkClass}>
                 <Icon size={22} strokeWidth={1.75} aria-hidden='true' />
               </span>
-              <div>
-                <h3>
-                  <span className='home-copy-desktop'>{title}</span>
-                  <span className='home-copy-tablet'>{tabletTitle}</span>
-                  <span className='home-copy-mobile'>
-                    {id === 'exchange-information'
-                      ? 'Exchange information'
-                      : id === 'return-information'
-                        ? 'Return policy'
-                        : 'Customer support'}
-                  </span>
-                </h3>
-                <p>{copy}</p>
+              <div className='min-w-0'>
+                <h3 className='text-[15px] font-semibold leading-[1.45] md:text-base'>{title}</h3>
+                <p className='mt-2 text-[13px] leading-[1.6] text-[color:var(--pamo-color-text-secondary)]'>
+                  {copy}
+                </p>
               </div>
               <span className='sr-only'>Contact PAMO for assistance.</span>
             </Link>

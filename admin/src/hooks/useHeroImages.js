@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createHeroImage, deleteHeroImage, fetchHeroImages, heroErrorMessage, reorderHeroImages, updateHeroImage } from '../utils/heroImages'
+import { createHeroImage, deleteHeroImage, fetchHeroImages, heroErrorMessage, reorderHeroImages, setDefaultHeroImage, updateHeroImage, replaceFallbackHeroImage, resetFallbackHeroImage } from '../utils/heroImages'
 
 const useHeroImages = token => {
   const [images, setImages] = useState([])
+  const [fallback, setFallback] = useState(null)
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState(null)
@@ -18,9 +19,10 @@ const useHeroImages = token => {
     controller.current = current
     reading.current = true
     try {
-      const slides = await fetchHeroImages(token, current.signal)
+      const data = await fetchHeroImages(token, current.signal)
       if (!mounted.current || current.signal.aborted) return
-      setImages(slides)
+      setImages(data.slides)
+      setFallback(data.fallback)
       setError('')
       setStatus('ready')
     } catch (failure) {
@@ -80,7 +82,10 @@ const useHeroImages = token => {
   }
 
   return {
-    images, status, error, notice, busy, refresh, move,
+    images, fallback, status, error, notice, busy, refresh, move,
+    replaceFallback: values => mutate(() => replaceFallbackHeroImage(token, values), 'Default Hero image replaced.'),
+    resetFallback: () => mutate(() => resetFallbackHeroImage(token), 'Original Hero image restored.'),
+    setDefault: id => mutate(() => setDefaultHeroImage(token, id), 'Default hero image updated.'),
     create: values => mutate(() => createHeroImage(token, values), 'Hero image added.'),
     update: (id, values) => mutate(() => updateHeroImage(token, id, values), 'Hero image updated.'),
     remove: id => mutate(() => deleteHeroImage(token, id), 'Hero image deleted.')

@@ -3,10 +3,10 @@ import { ShopContext } from '../context/shopContext'
 import Title from './Title';
 import { formatPhp, sumPhp } from '../../../shared/money.js';
 
-const CartTotal = ({ cartView = false, checkoutView = false, itemCount, unitCount, children }) => {
+const CartTotal = ({ cartView = false, checkoutView = false, itemCount, unitCount, subtotal: subtotalOverride, children }) => {
   
   const {delivery_fee,getCartAmount} = useContext(ShopContext);
-  const subtotal = getCartAmount();
+  const subtotal = subtotalOverride === undefined ? getCartAmount() : subtotalOverride;
   let total = NaN;
   try { total = sumPhp(subtotal, delivery_fee); } catch { /* Display unavailable rather than rounding invalid prices. */ }
   const amount = formatPhp;
@@ -16,7 +16,7 @@ const CartTotal = ({ cartView = false, checkoutView = false, itemCount, unitCoun
       <dl>
         <div><dt>Subtotal</dt><dd>{amount(subtotal)}</dd></div>
         <div><dt>Processing fee</dt><dd>{amount(delivery_fee)}</dd></div>
-        <div className='checkout-grand-total'><dt>Total</dt><dd>{amount(total)}</dd></div>
+        <div className='checkout-grand-total'><dt>Total</dt><dd className='font-financial [overflow-wrap:anywhere]'>{amount(total)}</dd></div>
       </dl>
     </div>;
     return <section className='cart-summary' aria-labelledby='cart-summary-heading'>
@@ -25,7 +25,7 @@ const CartTotal = ({ cartView = false, checkoutView = false, itemCount, unitCoun
       <dl className='cart-summary-values'>
         <div><dt>Subtotal ({unitCount} {unitCount === 1 ? 'unit' : 'units'})</dt><dd>{amount(subtotal)}</dd></div>
         <div><dt>Processing fee</dt><dd>{amount(delivery_fee)}</dd></div>
-        <div className='cart-summary-total'><dt>Total</dt><dd>{amount(total)}</dd></div>
+        <div className='cart-summary-total'><dt>Total</dt><dd className='font-financial [overflow-wrap:anywhere]'>{amount(total)}</dd></div>
       </dl>
       {children}
     </section>;
@@ -43,7 +43,7 @@ const CartTotal = ({ cartView = false, checkoutView = false, itemCount, unitCoun
           <p>{cartView ? 'Processing fee' : 'Shipping fee'}</p><p className='font-medium text-slate-900 dark:text-slate-100'>{amount(delivery_fee)}</p>
         </div>
         <div className='flex justify-between gap-4 border-t border-slate-200 pt-5 text-base font-bold text-slate-900 dark:border-slate-800 dark:text-slate-100'>
-          <p>Total</p><p className={'break-all text-right ' + (cartView ? 'text-xl text-amber-600 dark:text-amber-400' : '')}>{amount(total)}</p>
+          <p>Total</p><p className={'font-financial text-right [overflow-wrap:anywhere] ' + (cartView ? 'text-xl text-amber-600 dark:text-amber-400' : '')}>{amount(total)}</p>
         </div>
       </div>
     </div>

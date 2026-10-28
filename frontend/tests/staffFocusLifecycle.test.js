@@ -35,7 +35,9 @@ compiled.require = name => {
   if (name === 'react') return react;
   if (name === 'react-router-dom') return { useLocation: () => currentRunner.location };
   if (name === 'react-toastify') return { toast: { success() {}, error() {} } };
-  if (name === 'axios') return { post: (url, _body, options) => {
+  if (name === 'axios') return {
+    get: async () => ({ data: { success: true, categories: [], archivedCategories: [] } }),
+    post: (url, _body, options) => {
     assert(url.endsWith('/list'), 'Focus tests must never issue mutations');
     assert.equal(options.headers.token, 'synthetic-only');
     return Promise.resolve({ data: { success: true, orders: fixtures } });

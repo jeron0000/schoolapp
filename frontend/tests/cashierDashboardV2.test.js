@@ -34,7 +34,7 @@ compiled.filename = path.join(admin, 'cashier-dashboard-v2-test.cjs');
 compiled.paths = Module._nodeModulePaths(admin);
 compiled.require = name => {
   if (name === 'react') return hooks;
-  if (name === 'react-router-dom') return { Link: ({ to, state: _state, ...props }) => React.createElement('a', { href: to, ...props }) };
+  if (name === 'react-router-dom') return { Link: ({ to, ...props }) => React.createElement('a', { href: to, ...props, state: undefined }) };
   if (name === 'axios') return { get: (url, options) => new Promise((resolve, reject) => runner.requests.push({ url, options, resolve, reject })) };
   return requireAdmin(name);
 };

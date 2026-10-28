@@ -11,9 +11,9 @@ import { issueAuthToken } from '../utils/authTokens.js';
 process.env.JWT_SECRET = 'sr6b6-synthetic-only-signing-key';
 const owner = '0123456789abcdef01234567';
 
-async function server(t) {
+async function server(t, env = {}) {
     const app = express();
-    configureLocalApiSecurity(app);
+    configureLocalApiSecurity(app, env);
     app.use(express.json());
     let calls = 0;
     app.post('/api/private', authUser, (req, res) => { calls++; res.json({ success: true, owner: req.body.userId }); });
@@ -71,6 +71,33 @@ test('same-origin/native clients still require valid ownership and API responses
     }
     const wrongRole = await fetch(h.url, { method: 'POST', headers: { token: issueAuthToken(owner, 'cashier') } });
     assert.equal(wrongRole.status, 403);
+});
+
+test('production permits only exact configured HTTPS origins and keeps token preflight', async t => {
+    const origin = 'https://store.example.test';
+    const h = await server(t, { NODE_ENV: 'production', CORS_ALLOWED_ORIGINS: origin + ',https://admin.example.test' });
+    for (const allowed of [origin, 'https://admin.example.test']) {
+        const res = await fetch(h.url, { method: 'OPTIONS', headers: {
+            Origin: allowed, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'token,content-type'
+        } });
+        assert.equal(res.status, 204);
+        assert.equal(res.headers.get('access-control-allow-origin'), allowed);
+    }
+    for (const blocked of ['http://localhost:5173', origin + '.attacker.test', 'https://other.example.test']) {
+        const res = await fetch(h.url, { headers: { Origin: blocked } });
+        assert.equal(res.status, 403);
+        assert.equal(res.headers.get('access-control-allow-origin'), null);
+    }
+});
+
+test('production rejects absent, wildcard, HTTP and malformed CORS configuration', () => {
+    for (const origins of ['', '*', 'http://store.example.test', 'https://store.example.test/',
+        'https://store.example.test/path', 'https://user:password@store.example.test']) {
+        assert.throws(() => configureLocalApiSecurity(express(), {
+            NODE_ENV: 'production', CORS_ALLOWED_ORIGINS: origins
+        }), /CORS_ALLOWED_ORIGINS/);
+    }
+    assert.throws(() => configureLocalApiSecurity(express(), { VERCEL: '1' }), /CORS_ALLOWED_ORIGINS/);
 });
 
 test('environment variants are ignored while example files remain reviewable', () => {

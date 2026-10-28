@@ -8,10 +8,10 @@ import mongoose from 'mongoose';
 import { Writable } from 'node:stream';
 import { connectTestDatabase } from './helpers/database.js';
 import { v2 as cloudinary } from 'cloudinary';
-import heroModel from '../models/heroSlideModel.js';
+import heroModel, { HERO_FALLBACK_ID, HERO_CAROUSEL_FILTER } from '../models/heroSlideModel.js';
 import adminAuth from '../middleware/adminAuth.js';
 import heroRouter, { heroErrorHandler } from '../routes/heroRoute.js';
-import { listHeroSlides, listAllHeroSlides, addHeroSlide, updateHeroSlide, removeHeroSlide, reorderHeroSlides } from '../controllers/heroController.js';
+import { listHeroSlides, listAllHeroSlides, addHeroSlide, updateHeroSlide, removeHeroSlide, reorderHeroSlides, setDefaultHeroSlide, replaceFallbackHeroImage, resetFallbackHeroImage } from '../controllers/heroController.js';
 import { HERO_MAX_FILE_BYTES, parseHeroMetadata, validateHeroFile } from '../utils/heroImages.js';
 
 process.env.JWT_SECRET = 'hero-test-only-secret';
@@ -78,9 +78,10 @@ test('upload validation checks bytes, declared MIME, required presence and size'
 });
 
 test('public/Admin lists are read-only, projected, deterministic and support empty results', async t => {
+    t.mock.method(heroModel, 'findOne', () => query(null));
     const records = [slide(2, { isActive: true, sortOrder: 1 }), slide(1, { isActive: true, sortOrder: 1 }), slide(3), slide(4, { isActive: true, deletionPending: true })];
     t.mock.method(heroModel, 'find', (filter, projection) => {
-        if (filter.isActive) assert.deepEqual(filter, { isActive: true, deletionPending: false });
+        if (filter.isActive) assert.deepEqual(filter, { ...HERO_CAROUSEL_FILTER, isActive: true, deletionPending: false });
         const rows = filter.isActive ? records.filter(row => row.isActive && !row.deletionPending) : records;
         assert.equal(projection.imagePublicId, undefined);
         return { sort(order) { assert.deepEqual(order, { sortOrder: 1, _id: 1 }); return query([...rows].sort((a, b) => a.sortOrder - b.sortOrder || a._id.localeCompare(b._id))); } };
@@ -91,7 +92,7 @@ test('public/Admin lists are read-only, projected, deterministic and support emp
     const all = response(); await listAllHeroSlides({}, all); assert.equal(all.body.slides.length, 4); assert(all.body.slides.some(row => !row.isActive));
     assert(all.body.slides.every(row => !Object.hasOwn(row, 'imagePublicId')));
     t.mock.method(heroModel, 'find', () => query([]));
-    for (const handler of [listHeroSlides, listAllHeroSlides]) { const res = response(); await handler({}, res); assert.deepEqual(res.body, { success: true, slides: [] }); }
+    for (const handler of [listHeroSlides, listAllHeroSlides]) { const res = response(); await handler({}, res); assert.deepEqual(res.body, { success: true, slides: [], fallback: null }); }
 });
 
 test('list database failures return a sanitized failure, not a successful empty list', async t => {
@@ -159,6 +160,7 @@ test('DB failure after upload attempts compensation and reports cleanup failures
 });
 
 test('metadata edits preserve asset identity and activation drives public visibility', async t => {
+    t.mock.method(heroModel, 'findOne', () => query(null));
     const stored = slide();
     t.mock.method(heroModel, 'findOneAndUpdate', async (filter, update, options) => {
         assert.deepEqual(filter, { _id: id(1), deletionPending: false }); assert.deepEqual(options, { returnDocument: 'after', runValidators: true });
@@ -235,16 +237,88 @@ test('failed reorder never claims success or falls back to independent writes', 
     const res = response(); await reorderHeroSlides({ body: { orderedIds: [id(1)] } }, res); assert.equal(res.code, 500); assert.equal(res.body.success, false);
 });
 
+test('default selection persists in existing ordering, activates the image, and falls back after deletion', async t => {
+    t.mock.method(heroModel, 'findOne', () => query(null));
+    let records = [slide(1, { isActive: true }), slide(2, { isActive: true, sortOrder: 1 }), slide(3, { sortOrder: 2 })];
+    let transactionTail = Promise.resolve();
+    t.mock.method(mongoose.connection, 'transaction', work => {
+        const result = transactionTail.then(async () => {
+            const before = structuredClone(records);
+            try { return await work({ isolated: true }); } catch (error) { records = before; throw error; }
+        });
+        transactionTail = result.catch(() => {});
+        return result;
+    });
+    t.mock.method(heroModel, 'find', filter => query(records.filter(record => !filter.isActive || (record.isActive && !record.deletionPending))
+        .sort((a, b) => a.sortOrder - b.sortOrder || a._id.localeCompare(b._id))));
+    t.mock.method(heroModel, 'bulkWrite', async (operations, options) => {
+        assert.equal(options.ordered, true);
+        assert.deepEqual(options.session, { isolated: true });
+        let matchedCount = 0;
+        for (const { updateOne: { filter, update } } of operations) {
+            const record = records.find(item => item._id === filter._id && (filter.deletionPending === undefined || item.deletionPending === filter.deletionPending));
+            if (record) { Object.assign(record, update.$set); matchedCount++; }
+        }
+        return { matchedCount };
+    });
+    const setDefault = async number => {
+        const res = response();
+        await setDefaultHeroSlide({ params: { id: id(number) } }, res);
+        assert.equal(res.body.success, true);
+    };
+    const visible = async () => {
+        const res = response(); await listHeroSlides({}, res); return res.body.slides;
+    };
+    await setDefault(3);
+    assert.deepEqual((await visible()).map(record => record._id), [id(3), id(1), id(2)]);
+    assert.equal(records.find(record => record._id === id(3)).isActive, true);
+    assert.equal((await visible())[0]._id, id(3), 'Fresh reads retain the saved default');
+    await Promise.all([setDefault(1), setDefault(2)]);
+    assert.equal((await visible())[0]._id, id(2));
+    assert.equal(new Set(records.map(record => record.sortOrder)).size, records.length);
+    provider(t);
+    t.mock.method(heroModel, 'findByIdAndUpdate', async (recordId, update) => {
+        const record = records.find(item => item._id === recordId);
+        Object.assign(record, update.$set); return structuredClone(record);
+    });
+    t.mock.method(heroModel, 'deleteOne', async filter => {
+        const before = records.length;
+        records = records.filter(record => record._id !== filter._id);
+        return { deletedCount: before - records.length };
+    });
+    const removed = response();
+    await removeHeroSlide({ params: { id: id(2) } }, removed);
+    assert.equal(removed.body.success, true);
+    assert.equal((await visible())[0]._id, id(1));
+    records.forEach(record => { record.isActive = false; });
+    assert.deepEqual(await visible(), [], 'No active images lets the existing Storefront fallback take over');
+});
+
+test('default selection rejects malformed, missing, pending-deletion and failed transaction cases', async t => {
+    t.mock.method(mongoose.connection, 'transaction', async work => work({}));
+    t.mock.method(heroModel, 'find', () => query([slide(1, { deletionPending: true })]));
+    const invalid = response(); await setDefaultHeroSlide({ params: { id: 'bad' } }, invalid); assert.equal(invalid.code, 400);
+    const missing = response(); await setDefaultHeroSlide({ params: { id: id(2) } }, missing); assert.equal(missing.code, 404);
+    const pending = response(); await setDefaultHeroSlide({ params: { id: id(1) } }, pending); assert.equal(pending.code, 409);
+    t.mock.method(heroModel, 'find', () => query([slide(1)]));
+    t.mock.method(heroModel, 'bulkWrite', async () => ({ matchedCount: 0 }));
+    const changed = response(); await setDefaultHeroSlide({ params: { id: id(1) } }, changed); assert.equal(changed.code, 409);
+    t.mock.method(mongoose.connection, 'transaction', async () => { throw new Error('private transaction failure'); });
+    const failed = response(); await setDefaultHeroSlide({ params: { id: id(1) } }, failed);
+    assert.equal(failed.code, 500); assert.doesNotMatch(failed.body.message, /private/);
+});
+
 test('real HTTP routes retain Admin middleware and reject customer/Cashier/forged roles before upload', async t => {
+    t.mock.method(heroModel, 'findOne', () => query(null));
     t.mock.method(console, 'log', () => {}); t.mock.method(heroModel, 'find', () => query([])); t.mock.method(cloudinary.uploader, 'upload_stream', () => assert.fail('Unauthorized upload'));
     for (const route of heroRouter.stack.filter(layer => layer.route).map(layer => layer.route)) if (route.path !== '/list') assert.equal(route.stack[0].handle, adminAuth);
     const base = await server(t); const tokens = [undefined, 'invalid', issueAuthToken(id(1), 'customer'), issueAuthToken(id(1), 'cashier'), jwt.sign({ sub: id(1), role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '8h' })];
-    for (const token of tokens) for (const [method, endpoint] of [['GET', '/admin/list'], ['POST', '/add'], ['PATCH', '/reorder'], ['PATCH', '/' + id(1)], ['DELETE', '/' + id(1)]]) {
+    for (const token of tokens) for (const [method, endpoint] of [['GET', '/admin/list'], ['POST', '/add'], ['PUT', '/fallback'], ['DELETE', '/fallback'], ['PATCH', '/reorder'], ['PATCH', '/' + id(1) + '/default'], ['PATCH', '/' + id(1)], ['DELETE', '/' + id(1)]]) {
         const res = await fetch(base + endpoint, { method, headers: token ? { token } : {} }); assert.equal((await res.json()).success, false);
     }
     const admin = issueAuthToken(ADMIN_SUBJECT, 'admin');
-    const allowed = await fetch(base + '/admin/list', { headers: { token: admin } }); assert.deepEqual(await allowed.json(), { success: true, slides: [] });
-    const publicList = await fetch(base + '/list'); assert.deepEqual(await publicList.json(), { success: true, slides: [] });
+    const allowed = await fetch(base + '/admin/list', { headers: { token: admin } }); assert.deepEqual(await allowed.json(), { success: true, slides: [], fallback: null });
+    const publicList = await fetch(base + '/list'); assert.deepEqual(await publicList.json(), { success: true, slides: [], fallback: null });
 });
 
 test('real multipart requests reject malformed, missing, forged MIME and oversized files; valid Admin upload succeeds', async t => {
@@ -263,6 +337,154 @@ test('real multipart requests reject malformed, missing, forged MIME and oversiz
 test('unexpected multipart server errors are not mislabeled as invalid client input', () => {
     const res = response(); heroErrorHandler(new Error('private server allocation failure'), { is: () => true }, res, () => assert.fail('Must respond'));
     assert.equal(res.code, 500); assert(!res.body.message.includes('private'));
+});
+
+// Isolated persistence fixture: no MongoDB or Cloudinary traffic.
+function fallbackStore(t) {
+    const records = new Map([[id(1), slide(1, { isActive: true })], [id(2), slide(2, { isActive: true, sortOrder: 1 })]]);
+    const calls = provider(t);
+    t.mock.method(heroModel, 'findOne', filter => {
+        assert.equal(filter._id, HERO_FALLBACK_ID);
+        assert.equal(filter.role, 'fallback');
+        return query(structuredClone(records.get(HERO_FALLBACK_ID) || null));
+    });
+    t.mock.method(heroModel, 'find', filter => {
+        assert.deepEqual(filter.role, { $ne: 'fallback' });
+        const rows = [...records.values()].filter(record => record.role !== 'fallback'
+            && (!filter.isActive || (record.isActive && !record.deletionPending)));
+        return query(rows.map(record => structuredClone(record)));
+    });
+    t.mock.method(heroModel, 'findOneAndUpdate', async (filter, update, options) => {
+        assert.equal(filter._id, HERO_FALLBACK_ID);
+        assert.equal(filter.role, 'fallback');
+        const previous = records.get(HERO_FALLBACK_ID);
+        if (previous?.deletionPending && options.upsert) throw Object.assign(new Error('Duplicate reserved key'), { code: 11000 });
+        if (!previous && !options.upsert) return null;
+        const next = { ...previous, _id: HERO_FALLBACK_ID, ...update.$set };
+        const validationError = new heroModel(next).validateSync();
+        if (validationError) throw validationError;
+        records.set(HERO_FALLBACK_ID, next);
+        return structuredClone(options.returnDocument === 'before' ? previous || null : next);
+    });
+    t.mock.method(heroModel, 'deleteOne', async filter => {
+        assert.equal(filter._id, HERO_FALLBACK_ID);
+        const current = records.get(filter._id);
+        if (!current || current.imagePublicId !== filter.imagePublicId || !current.deletionPending) return { deletedCount: 0 };
+        records.delete(filter._id);
+        return { deletedCount: 1 };
+    });
+    return { records, calls };
+}
+
+test('fallback replacement persists separately and reset restores original without changing slides', async t => {
+    const { records, calls } = fallbackStore(t);
+    const originals = structuredClone([...records.values()]);
+    let res = response(); await replaceFallbackHeroImage(createRequest(), res);
+    assert.equal(res.body.success, true);
+    assert.equal(records.get(HERO_FALLBACK_ID).role, 'fallback');
+    assert.equal(records.get(HERO_FALLBACK_ID).isActive, false);
+    for (const handler of [listHeroSlides, listAllHeroSlides]) {
+        res = response(); await handler({}, res);
+        assert.deepEqual(res.body.slides.map(record => record._id), [id(1), id(2)]);
+        assert.equal(res.body.fallback.imageUrl, slide().imageUrl);
+        assert.equal(res.body.fallback.imagePublicId, undefined);
+    }
+    // Reorder/default writes must never include the fallback document.
+    t.mock.method(mongoose.connection, 'transaction', async work => work({}));
+    t.mock.method(heroModel, 'bulkWrite', async operations => {
+        assert(operations.every(operation => operation.updateOne.filter._id !== HERO_FALLBACK_ID));
+        return { matchedCount: operations.length };
+    });
+    for (const [handler, req] of [[reorderHeroSlides, { body: { orderedIds: [id(2), id(1)] } }], [setDefaultHeroSlide, { params: { id: id(2) } }]]) {
+        res = response(); await handler(req, res); assert.equal(res.body.success, true);
+    }
+    res = response(); await resetFallbackHeroImage({}, res); assert.equal(res.body.success, true);
+    assert.deepEqual([...records.values()], originals);
+    res = response(); await listHeroSlides({}, res); assert.equal(res.body.fallback, null);
+    res = response(); await resetFallbackHeroImage({}, res); assert.equal(res.body.success, true, 'Reset is idempotent');
+    assert.equal(calls.deletes.length, 1);
+});
+
+test('concurrent fallback replacements retain one override and clean up only replaced assets', async t => {
+    const { records, calls } = fallbackStore(t);
+    const results = [response(), response(), response()];
+    await Promise.all(results.map((res, index) => replaceFallbackHeroImage(createRequest({ altText: 'Replacement ' + index }), res)));
+    assert(results.every(res => res.body.success));
+    assert.equal(records.size, 3, 'Two carousel slides plus one fallback');
+    const current = records.get(HERO_FALLBACK_ID);
+    assert.equal(calls.uploads.length, 3);
+    assert.equal(calls.deletes.length, 2);
+    assert(calls.deletes.every(call => call.asset !== current.imagePublicId));
+    const res = response(); await listAllHeroSlides({}, res);
+    assert.equal(res.body.fallback.altText, current.altText, 'A fresh request retains the latest saved description');
+});
+
+test('fallback rejects invalid files/metadata and reserves its identity from slide actions', async t => {
+    const { calls } = fallbackStore(t);
+    for (const req of [{ ...createRequest(), file: undefined }, createRequest({ altText: '' }), createRequest({ isActive: 'true' }),
+        createRequest({ role: 'fallback' }), { ...createRequest(), file: { ...file(), buffer: Buffer.from('MZ') } }]) {
+        const res = response(); await replaceFallbackHeroImage(req, res); assert.equal(res.code, 400);
+    }
+    assert.equal(calls.uploads.length, 0);
+    for (const handler of [updateHeroSlide, removeHeroSlide, setDefaultHeroSlide]) {
+        const res = response(); await handler({ params: { id: HERO_FALLBACK_ID }, body: { isActive: true } }, res);
+        assert.equal(res.code, 400); assert.match(res.body.message, /Default Hero Image/);
+    }
+});
+
+test('failed reset hides the override, blocks concurrent replacement and remains retryable', async t => {
+    const { records } = fallbackStore(t);
+    let res = response(); await replaceFallbackHeroImage(createRequest(), res);
+    t.mock.method(cloudinary.uploader, 'destroy', async () => { throw new Error('private provider failure'); });
+    res = response(); await resetFallbackHeroImage({}, res); assert.equal(res.code, 502);
+    assert.equal(records.get(HERO_FALLBACK_ID).deletionPending, true);
+    res = response(); await listHeroSlides({}, res); assert.equal(res.body.fallback, null);
+    res = response(); await listAllHeroSlides({}, res); assert.equal(res.body.fallback.deletionPending, true);
+    provider(t);
+    res = response(); await replaceFallbackHeroImage(createRequest(), res); assert.equal(res.code, 409);
+    res = response(); await resetFallbackHeroImage({}, res); assert.equal(res.body.success, true);
+    assert.equal(records.has(HERO_FALLBACK_ID), false);
+});
+
+test('fallback persistence failures compensate safely without deleting a possibly committed asset', async t => {
+    const { records, calls } = fallbackStore(t);
+    t.mock.method(heroModel, 'findOneAndUpdate', async () => { throw new Error('private database detail'); });
+    let res = response(); await replaceFallbackHeroImage(createRequest(), res);
+    assert.equal(res.code, 500); assert.equal(calls.deletes.length, 1); assert.doesNotMatch(res.body.message, /private/);
+    t.mock.method(heroModel, 'findOneAndUpdate', async (filter, update) => {
+        records.set(HERO_FALLBACK_ID, { _id: HERO_FALLBACK_ID, ...update.$set });
+        throw new Error('Write response lost');
+    });
+    res = response(); await replaceFallbackHeroImage(createRequest(), res);
+    assert.equal(res.code, 500); assert.equal(calls.deletes.length, 1, 'The committed image must not be destroyed');
+    assert.equal(records.get(HERO_FALLBACK_ID).imagePublicId, calls.uploads.at(-1).public_id);
+});
+
+test('replacement reports old-asset cleanup failures while preserving the saved new image', async t => {
+    const { records } = fallbackStore(t);
+    let res = response(); await replaceFallbackHeroImage(createRequest(), res); assert.equal(res.body.success, true);
+    const previous = records.get(HERO_FALLBACK_ID).imagePublicId;
+    const calls = provider(t, { destroyError: new Error('private provider failure') });
+    res = response(); await replaceFallbackHeroImage(createRequest({ altText: 'New image retained' }), res);
+    assert.equal(res.code, 502); assert.match(res.body.message, /replacement was saved/);
+    assert.equal(records.get(HERO_FALLBACK_ID).altText, 'New image retained');
+    assert.equal(calls.deletes[0].asset, previous);
+    assert.notEqual(records.get(HERO_FALLBACK_ID).imagePublicId, previous);
+});
+
+test('fallback HTTP upload reuses signature validation and protected reset route', async t => {
+    const { records, calls } = fallbackStore(t);
+    const base = await server(t), token = issueAuthToken(ADMIN_SUBJECT, 'admin');
+    const send = async buffer => {
+        const form = new FormData(); form.set('altText', 'Campus fallback');
+        form.set('image', new Blob([buffer], { type: 'image/png' }), 'campus.png');
+        return fetch(base + '/fallback', { method: 'PUT', headers: { token }, body: form });
+    };
+    let res = await send(Buffer.from('MZ')); assert.equal(res.status, 400); assert.equal(calls.uploads.length, 0);
+    res = await send(png); assert.equal(res.status, 200); assert.equal((await res.json()).success, true);
+    assert.equal(records.get(HERO_FALLBACK_ID).altText, 'Campus fallback');
+    res = await fetch(base + '/fallback', { method: 'DELETE', headers: { token } });
+    assert.equal((await res.json()).success, true); assert.equal(records.has(HERO_FALLBACK_ID), false);
 });
 
 test('Hero MongoDB lifecycle on a fresh isolated database with mocked Cloudinary', { skip: process.env.PAMO_HERO_INTEGRATION !== '1', timeout: 60000 }, async t => {

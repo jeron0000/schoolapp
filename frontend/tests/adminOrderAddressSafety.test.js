@@ -16,7 +16,7 @@ const output = await build({
       import OrderDetails from './src/components/OrderDetails.jsx';
       import PaymentDetails from './src/components/PaymentDetails.jsx';
       export { OrderDetails };
-      export const renderOrderRecord = record => renderToStaticMarkup(<OrderDetails order={record} pending={false} onAction={() => {}} onClose={() => {}} />);
+      export const renderOrderRecord = (record, programCategories = []) => renderToStaticMarkup(<OrderDetails order={record} pending={false} onAction={() => {}} onClose={() => {}} programCategories={programCategories} />);
       const order = address => ({
         _id: '0123456789abcdef01234567', address, items: [], amount: 235,
         date: 1, sentToCashierAt: 1, status: 'Sent to Cashier', payment: false,
@@ -27,6 +27,9 @@ const output = await build({
       );
       export const renderPayment = address => renderToStaticMarkup(
         <PaymentDetails order={order(address)} currency='P' pending={false} onConfirm={() => {}} onClose={() => {}} />
+      );
+      export const renderPaymentRecord = (record, programCategories = []) => renderToStaticMarkup(
+        <PaymentDetails order={record} currency='P' pending={false} onConfirm={() => {}} onClose={() => {}} programCategories={programCategories} />
       );
     `
   },
@@ -61,6 +64,94 @@ test('normal addresses retain their established staff presentation', () => {
   }
   assert.match(adminHtml, /123 Campus Road/)
   assert.match(adminHtml, /Carmona, Cavite, Philippines, 4116/)
+})
+
+test('campus pickup orders use the authenticated student snapshot without address fallbacks', () => {
+  const record = {
+    _id: 'campus-pickup-order',
+    student: { name: 'Campus Student', email: 'campus@example.test', academicProgram: 'BSIT' },
+    fulfillmentMethod: 'campus_pickup',
+    items: [],
+    amount: 235,
+    date: 1,
+    sentToCashierAt: 1,
+    status: 'Sent to Cashier',
+    payment: false,
+    paymentMethod: 'COD',
+    allowedStatuses: []
+  }
+  const html = compiled.exports.renderOrderRecord(record)
+  assert.match(html, /Campus Student/)
+  assert.match(html, /campus@example\.test/)
+  assert.match(html, /BSIT/)
+  assert.match(html, /Campus pickup/)
+  assert.doesNotMatch(html, /Street address not provided|Mobile number not provided/)
+})
+
+test('staff order and receipt views resolve the current managed academic program name', () => {
+  const record = {
+    _id: 'renamed-program-order',
+    student: { name: 'Existing Student', email: 'student@example.test', academicProgram: 'BSIT' },
+    fulfillmentMethod: 'campus_pickup',
+    items: [], amount: 235, date: 1, sentToCashierAt: 1,
+    status: 'Sent to Cashier', payment: true, paymentMethod: 'COD',
+    receiptNumber: 'OR-RENAMED', allowedStatuses: []
+  }
+  const categories = [{ code: 'BSIT', name: 'Information Technology', scope: 'program', active: false }]
+  const orderHtml = compiled.exports.renderOrderRecord(record, categories)
+  const receiptHtml = compiled.exports.renderPaymentRecord(record, categories)
+
+  for (const html of [orderHtml, receiptHtml]) {
+    assert.match(html, /Information Technology/)
+    assert.doesNotMatch(html, />BSIT</)
+  }
+  assert.equal(record.student.academicProgram, 'BSIT')
+})
+
+test('PAMO Admin order details show authoritative cashier receipt evidence', () => {
+  const paidOrder = {
+    _id: 'paid-order',
+    student: { name: 'Paid Student', email: 'paid@example.test', academicProgram: 'BSIT' },
+    fulfillmentMethod: 'campus_pickup', items: [], amount: 235, date: 1,
+    status: 'Packing', payment: true, paymentMethod: 'COD',
+    receiptNumber: 'OR-2026-101', paidAt: Date.UTC(2026, 9, 28, 4, 30),
+    allowedStatuses: []
+  }
+  const html = compiled.exports.renderOrderRecord(paidOrder)
+
+  assert.match(html, /Payment information/i)
+  assert.match(html, /Official Receipt Number/)
+  assert.match(html, /OR-2026-101/)
+  assert.match(html, /Payment confirmation date/)
+  assert.match(html, /Paid/)
+})
+
+test('pending, historical paid, and cancelled paid orders keep accurate receipt states', () => {
+  const baseOrder = {
+    _id: 'receipt-state-order',
+    student: { name: 'Receipt Student', email: 'receipt@example.test', academicProgram: 'BSIT' },
+    fulfillmentMethod: 'campus_pickup', items: [], amount: 235, date: 1,
+    paymentMethod: 'COD', allowedStatuses: []
+  }
+  const pendingHtml = compiled.exports.renderOrderRecord({
+    ...baseOrder, status: 'Sent to Cashier', payment: false
+  })
+  const historicalHtml = compiled.exports.renderOrderRecord({
+    ...baseOrder, status: 'Packing', payment: true
+  })
+  const cancelledHtml = compiled.exports.renderOrderRecord({
+    ...baseOrder, status: 'Cancelled', payment: true,
+    receiptNumber: 'OR-RETAINED', paidAt: 1, cancellationSource: 'admin'
+  })
+
+  assert.match(pendingHtml, /Awaiting Cashier Confirmation/)
+  assert.match(historicalHtml, /No receipt recorded/)
+  assert.match(cancelledHtml, /OR-RETAINED/)
+  const online = { ...baseOrder, payment: true, paymentMethod: 'Stripe', status: 'Approved', receiptIsTest: true }
+  assert.match(compiled.exports.renderOrderRecord(online), /Awaiting Official Receipt/)
+  const testReceipt = compiled.exports.renderOrderRecord({ ...online, receiptNumber: 'TEST-OR' })
+  assert.match(testReceipt, /Test Receipt Reference/)
+  assert.match(testReceipt, /TEST — TEST-OR/)
 })
 
 test('malformed historical address fields render safe fallbacks in both staff panels', () => {
@@ -101,10 +192,13 @@ test('V2 details preserve historical currencies, images, totals, and server-prov
   }
   for (const paymentCurrency of [undefined, 'USD', 'PHP']) {
     const html = compiled.exports.renderOrderRecord({ ...record, paymentCurrency })
+    let expectedAmount = /235\.00 USD/
+    if (paymentCurrency === undefined) expectedAmount = /currency unverified/
+    else if (paymentCurrency === 'PHP') expectedAmount = /₱235\.00/
     assert.match(html, /https:\/\/images\.example\.test\/uniform\.png/)
     assert.match(html, /Synthetic uniform/)
     assert.match(html, /Processing Fee/)
-    assert.match(html, paymentCurrency === undefined ? /currency unverified/ : paymentCurrency === 'PHP' ? /₱235\.00/ : /235\.00 USD/)
+    assert.match(html, expectedAmount)
   }
   const React = compiled.require('react')
   const calls = []
@@ -112,7 +206,8 @@ test('V2 details preserve historical currencies, images, totals, and server-prov
   const buttons = []
   const walk = node => {
     if (!React.isValidElement(node)) return
-    if (node.type === 'button' && ['orders-primary', 'orders-reject'].includes(node.props.className)) buttons.push(node)
+    const classNames = typeof node.props.className === 'string' ? node.props.className.split(' ') : []
+    if (node.type === 'button' && classNames.some(name => ['orders-primary', 'orders-reject'].includes(name))) buttons.push(node)
     React.Children.toArray(node.props.children).forEach(walk)
   }
   walk(tree)

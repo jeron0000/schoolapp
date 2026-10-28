@@ -9,11 +9,11 @@
 - Approved Figma frames govern visual requirements, not business logic. File: https://www.figma.com/design/syRAO060QPqFSw0VGGbXBi/Untitled . Mock data are not functional specifications.
 - Task-specific user authorization defines the allowed edits. A passing build or implementation does **not** constitute design approval.
 
-## Protected features and visual approvals
+## Feature and design change authorization
 
-Preserve functionality and explicitly approved appearance of PAMO Admin Dashboard V1/approved V2, Cashier Dashboard, Global Light/Dark Toggle, Hero Carousel, My Orders V2, About Us V2, Contact Us V2, Shared Login/Authentication V3, and previously approved customer storefront pages. Other individually approved features are similarly protected. **Add Product V2 is not automatically frozen:** require explicit approval before treating its visual implementation as accepted. Only the user can authorize unfreezing/replacing an approved design.
+All PAMO Legacy feature and design freezes are lifted, including Storefront, PAMO Admin Dashboard V1/V2, Cashier Dashboard, Authentication/Shared Login, shared UI, Global Light/Dark Toggle, Hero Carousel, My Orders V2, About Us V2, Contact Us V2, Add Product V2 and all other previously approved features. They may be redesigned, refactored, optimized or functionally modified within an authorized task without a separate unfreeze approval. Previous visual approval is a reference, not an immutable implementation restriction. This does not approve a new design or authorize work outside the current mission. Security, data integrity, operational approvals and the contracts below remain in force. This unfreeze does not apply to PAMO Campus (MERN).
 
-Maintain navigation, interactions, mobile/desktop responsiveness and light/dark behavior when shared functionality changes. Inspect affected consumers rather than changing unrelated pages for uniformity.
+Maintain navigation, interactions, mobile/desktop responsiveness and light/dark behavior outside authorized changes. Inspect affected consumers rather than changing unrelated pages for uniformity.
 
 ## Inventory, orders and carts
 
@@ -39,4 +39,4 @@ Maintain navigation, interactions, mobile/desktop responsiveness and light/dark 
 
 ## Areas requiring special regression attention
 
-Cart and checkout, authentication/session changes, money formatting, upload signature checks and Cloudinary compensation, provider verifiers, analytics semantics (PAMO 30-day sales and Cashier historic quality counters), receipt-index readiness, Shared Login, and all frozen UI.
+Cart and checkout, authentication/session changes, money formatting, upload signature checks and Cloudinary compensation, provider verifiers, analytics semantics (PAMO 30-day sales and Cashier historic quality counters), receipt-index readiness, Shared Login, and affected UI.

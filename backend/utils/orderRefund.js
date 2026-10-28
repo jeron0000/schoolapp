@@ -1,6 +1,8 @@
 import { cancellationPaymentState, REFUND_STATUSES } from '../../shared/refund.js';
+import { isDemoOrder } from '../../shared/demoPayment.js';
 
 export const cancellationRefund = order => {
+    if (isDemoOrder(order)) return undefined;
     const state = cancellationPaymentState(order);
     if (state === 'review') {
         throw Object.assign(new Error('Payment records need staff review before this order can be cancelled. Contact PAMO.'), { status: 409 });

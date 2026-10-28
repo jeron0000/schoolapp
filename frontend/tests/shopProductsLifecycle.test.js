@@ -79,6 +79,15 @@ const harness = t => {
     }
   });
   t.mock.method(axios, 'get', url => {
+    if (url === 'https://api.example.test/api/category/public') {
+      return Promise.resolve({
+        data: {
+          success: true,
+          categories: [{ name: 'Information Technology', code: 'BSIT', scope: 'program' }],
+          archivedCategories: [{ name: 'Hospitality Management', code: 'BSHM', scope: 'program' }],
+        },
+      });
+    }
     assert.equal(url, 'https://api.example.test/api/product/list');
     let resolve, reject;
     const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
@@ -132,15 +141,92 @@ test('initial successful load preserves products, context API and stable refresh
   assert.equal(value.productsLoading, false);
   assert.equal(value.productError, '');
   assert.equal(value.getProductsData, initial.getProductsData);
+  assert.deepEqual(value.productCategories, [
+    { name: 'Information Technology', code: 'BSIT', scope: 'program' },
+    { name: 'Hospitality Management', code: 'BSHM', scope: 'program', active: false },
+  ]);
+  assert.equal(value.categoriesLoading, false);
+  assert.equal(value.categoryError, '');
+  assert.equal(value.getProductCategories, initial.getProductCategories);
   assert.equal(value.currency, '₱');
   assert.equal(value.token, '');
   assert.equal(value.cartReady, true);
   assert.deepEqual(Object.keys(value).sort(), [
     'products', 'currency', 'delivery_fee', 'productsLoading', 'productError', 'search', 'setSearch',
+    'productCategories', 'categoriesLoading', 'categoryError', 'getProductCategories',
     'showSearch', 'setShowSearch', 'cartItems', 'addToCart', 'setCartItems', 'cartReady', 'cartError',
     'reloadCart', 'isCartReady', 'beginCartCheckout', 'getCartCount', 'updateQuantity', 'getCartAmount',
-    'navigate', 'backendUrl', 'setToken', 'token', 'sessionMessage', 'getProductsData'
+    'navigate', 'backendUrl', 'setToken', 'token', 'sessionMessage', 'getProductsData', 'userId',
+    'studentProfile', 'profileLoading', 'profileError', 'updateAcademicProgram'
   ].sort());
+  h.unmount();
+});
+
+test('the next scheduled price activation triggers one catalog refresh without polling', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
+  const h = harness(t);
+  h.mount();
+  h.requests[0].resolve({
+    data: {
+      success: true,
+      products: [{ _id: 'before-change' }],
+      nextPriceChangeAt: new Date(Date.now() + 1000).toISOString()
+    }
+  });
+  await settle();
+
+  assert.equal(h.requests.length, 1);
+  t.mock.timers.tick(1000);
+  t.mock.timers.tick(0);
+  await settle();
+  assert.equal(h.requests.length, 2);
+
+  h.requests[1].resolve(success('after-change'));
+  await settle();
+  assert.equal(h.render().products[0]._id, 'after-change');
+  h.unmount();
+});
+
+test('returning to a visible tab refreshes stale products once', async t => {
+  let clock = 1_000_000;
+  t.mock.method(Date, 'now', () => clock);
+  const listeners = {};
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const documentSurface = {
+    visibilityState: 'hidden',
+    addEventListener: (name, listener) => { listeners[name] = listener; },
+    removeEventListener: name => { delete listeners[name]; }
+  };
+  const windowSurface = {
+    addEventListener: (name, listener) => { listeners[name] = listener; },
+    removeEventListener: name => { delete listeners[name]; }
+  };
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: documentSurface });
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: windowSurface });
+  t.after(() => {
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else delete globalThis.document;
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else delete globalThis.window;
+  });
+
+  const h = harness(t);
+  h.mount();
+  h.requests[0].resolve(success('initial'));
+  await settle();
+  clock += 2000;
+
+  listeners.visibilitychange();
+  assert.equal(h.requests.length, 1);
+  documentSurface.visibilityState = 'visible';
+  listeners.visibilitychange();
+  listeners.focus();
+  assert.equal(h.requests.length, 2);
+
+  h.requests[1].resolve(success('visible-refresh'));
+  await settle();
+  assert.equal(h.render().products[0]._id, 'visible-refresh');
   h.unmount();
 });
 
@@ -172,7 +258,7 @@ for (const olderFailure of [false, true]) {
       const latest = initial.getProductsData();
       if (newerFailure) h.requests[1].reject(new Error('Newer failure'));
       else h.requests[1].resolve(success('newer'));
-      assert.equal(await latest, undefined);
+      assert.deepEqual(await latest, newerFailure ? undefined : [{ _id: 'newer' }]);
       const writes = h.writes();
       const notices = h.notices.mock.callCount();
       if (olderFailure) h.requests[0].reject(new Error('Older failure'));

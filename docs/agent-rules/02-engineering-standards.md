@@ -18,6 +18,17 @@
 - Avoid dense nesting, obscure ternaries, hidden side effects, unnecessary parameters, repeated error branches and unrelated formatting churn.
 - For readability-only missions, compare behavior/AST or generated output when feasible; do not mix formatting with functional fixes.
 
+## Mandatory project-wide clean-code standards
+
+- Prefer readable, conventional code over clever, compressed or unnecessarily short syntax.
+- Do not use nested ternary operators. Use `if`/`else`, `switch` statements, early returns or clearly named intermediate values.
+- Avoid complicated JSX, dense one-line handlers and deeply nested control flow. Keep functions cohesive and give state, events and domain values clear names.
+- Apply KISS, YAGNI, pragmatic DRY and separation of concerns. Remove verified dead code and redundant implementations without creating speculative abstractions.
+- Follow familiar React, Express and Mongoose patterns. Keep backend structure within the existing lightweight MVC approach; do not add generic service, repository or wrapper layers without a demonstrated need.
+- Use Tailwind utilities as the primary component styling approach where they fit the existing implementation. Preserve established CSS files, shared tokens and cascade behavior when they remain the clearer or safer choice.
+- Keep imports consistent and consolidate named imports from the same module when that improves readability. Preserve understandable relative paths and avoid unnecessary barrel files or circular dependencies.
+- Apply these standards to all new and modified application-owned code in `frontend/`, `admin/`, `backend/`, `shared/`, tests and configuration.
+
 ## React and styling standards
 
 - Keep presentation and business behavior appropriately separated. Manage state ownership, effects, stale responses, cleanup, loading/error/empty states and consumer contracts carefully.
@@ -34,7 +45,7 @@
 ## System-wide consistency
 
 - Keep appropriate conventions consistent across customer, PAMO Admin, Cashier and shared modules: naming, validation, API/error contracts, accessibility, testing and execution flow.
-- Consistency does not mean identical UIs or merged role-specific workflows. Preserve approved design and behavior; don't make incidental changes to unrelated areas.
+- Consistency does not mean identical UIs or merged role-specific workflows. Preserve design and behavior outside authorized changes; prior approval does not freeze PAMO Legacy features or visuals. Don't make incidental changes to unrelated areas.
 
 ## Engineering Excellence mission
 

@@ -67,6 +67,34 @@ const mount = (kind, props) => {
   return h;
 };
 
+test('verified online payments record a receipt separately and test references remain visibly distinguished', () => {
+  for (const livemode of [false, true]) {
+    const calls = [];
+    const order = record({ payment: true, paymentMethod: 'Stripe', paidAt: 123, status: 'Approved',
+      stripePayment: { sessionId: 'cs_fixture', paymentIntentId: 'pi_fixture', chargeId: 'ch_fixture',
+        accountId: 'acct_fixture', livemode, verifiedAt: 123 } });
+    const h = mount('Details', { v2: true, order, pending: false, onConfirm: (...args) => calls.push(args) });
+    assert.match(h.html(), /Awaiting Official Receipt/);
+    const expected = livemode ? 'Record Official Receipt' : 'Record Test Receipt Reference';
+    assert.match(h.html(), new RegExp(expected));
+    if (!livemode) assert.match(h.html(), /not a genuine school-issued receipt/);
+    find(h.tree, node => node.type === 'input').props.onChange({ target: { value: ' OR-ONLINE ' } });
+    h.render();
+    find(h.tree, node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    assert.deepEqual(calls, [[order._id, { receiptNumber: 'OR-ONLINE', receiptOnly: true }]]);
+    h.props = { ...h.props, pending: true };
+    h.render();
+    assert.equal(find(h.tree, node => node.type === 'button' && node.props.type === 'submit').props.disabled, true);
+    h.props = { ...h.props, pending: false, order: { ...order, receiptNumber: 'OR-ONLINE' } };
+    h.render();
+    assert.equal(all(h.tree, node => node.type === 'form').length, 0);
+    assert.match(h.html(), livemode ? /OR-ONLINE/ : /TEST — OR-ONLINE/);
+    const directory = mount('List', { orders: [h.props.order], filter: 'Receipt Records', selectedId: order._id,
+      onSelect() {}, onFilterChange() {}, query: '', onQueryChange() {} });
+    assert.match(directory.html(), livemode ? /OR-ONLINE/ : /TEST — OR-ONLINE/);
+  }
+});
+
 test('eligible confirmation preserves receipt validation, trimmed payload, cancel reset and pending behavior', () => {
   const confirmations = [];
   const h = mount('Details', { v2: true, order: record(), pending: false, onConfirm: (...args) => confirmations.push(args), onClose() {} });
@@ -145,7 +173,7 @@ test('Receipt Details preserves original receipt, audit data, items, fees and un
   const content = find(h.tree, node => node.props['aria-label'] === 'Receipt record content');
   assert.equal(content.props.tabIndex, 0);
   assert.equal(content.props.role, 'region');
-  assert.equal(all(h.tree, node => node.props.className === 'cashier-payment-details-body').length, 1);
+  assert.equal(all(h.tree, node => node.props.className?.split(' ').includes('cashier-payment-details-body')).length, 1);
   const payable = mount('Details', { v2: true, receiptRecord: true, order: record(), onClose() {} });
   assert.equal(all(payable.tree, node => ['form', 'input', 'select'].includes(node.type)).length, 0);
   const malformed = mount('Details', { v2: true, receiptRecord: true, order: { ...order, address: { firstName: {}, phone: [] } } }).html();

@@ -8,11 +8,11 @@
 - Inspect **exact relevant frames** and, where applicable, variants, interactions, responsive versions, light/dark themes and asset handoffs using the connected Figma integration.
 - Figma governs authorized visual specifications; the **local repo** governs working functionality and data contracts. Do not derive backend/API requirements from Figma placeholder content.
 - When access/specifications are missing, report the limitation; do not invent pixels, interaction requirements or new designs.
-- Only modify frozen/approved visuals when the current task explicitly authorizes it. Add Product V2 requires explicit visual acceptance before treating as approved.
+- All PAMO Legacy design and feature freezes are lifted, including previously approved V2 screens, Storefront, PAMO Admin, Cashier, Authentication and shared UI. Authorized visual changes require no separate unfreeze approval. Follow the current task's design requirements; prior acceptance is not a restriction on authorized redesign. Do not modify Figma without explicit authorization.
 
 ## Design system
 
-Use existing STI yellow/amber, deep navy, white/off-white, slate/neutral palette; preserve **IBM Plex Sans**, **Lucide** icons and host-specific component conventions. An explicit newer approved spec overrides older conflicting font/icon references.
+Use the existing STI yellow/amber, deep navy, white/off-white, slate/neutral palette, **IBM Plex Sans**, **Lucide** icons and host-specific conventions as the baseline unless the authorized design task changes them. An explicit newer authorized spec overrides older conflicting font/icon references.
 
 Keep typography, spacing, controls, icons, borders, radii, shadows, visual feedback, focus indicators, navigation, loading/error states and light/dark modes consistent with each page's approved purpose. Don't homogenize unrelated pages.
 
@@ -22,7 +22,7 @@ Keep typography, spacing, controls, icons, borders, radii, shadows, visual feedb
 - Representative widths **280, 360, 390, 820, 1280, 1440, 1920, 2560, 3440, 4096px**. Also consider viewport height, zoom, touch devices and DPR where relevant.
 - Check clipping, overflow, hit targets, keyboard focus/order, labels, reduced motion, navigation and theme contrast.
 - Test proportionately to changed UI rather than browser-sweeping the entire application for each task.
-- Preserve image source/fallback behavior, responsive sizing and loading priority where image delivery changes. Never replace protected image assets without authorization.
+- Preserve image source/fallback behavior, responsive sizing and loading priority where image delivery changes. Replace image assets only within the current authorized scope.
 
 ## Verification
 

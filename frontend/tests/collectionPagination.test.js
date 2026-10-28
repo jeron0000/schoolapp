@@ -4,12 +4,22 @@ import Module, { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import {
+  getAcademicProgramName,
+  getAcademicProgramOptions,
+  getGenderOptions,
+  getMerchandiseCategoryOptions,
+  getProductCategoryName,
+  getProductGenderName,
+} from '../../shared/productTaxonomy.js';
 
 const frontend = fileURLToPath(new URL('../', import.meta.url));
 const output = await build({
   stdin: { resolveDir: frontend, contents: `
     export { default as Collection } from './src/pages/Collection.jsx';
     export { default as ProductItem } from './src/components/ProductItem.jsx';
+    export { default as LatestCollection } from './src/components/LatestCollection.jsx';
+    export { default as ProgramRecommendations } from './src/components/ProgramRecommendations.jsx';
     export { ShopContext } from './src/context/shopContext.js';
   ` },
   bundle: true,
@@ -34,7 +44,7 @@ compiled.require = name => name === 'react-router-dom'
   ? { ...router, useSearchParams: (...args) => (activeSearchParams || router.useSearchParams)(...args) }
   : require(name);
 compiled._compile(output.outputFiles[0].text, filename);
-const { Collection, ProductItem, ShopContext } = compiled.exports;
+const { Collection, ProductItem, LatestCollection, ProgramRecommendations, ShopContext } = compiled.exports;
 
 const products = count => Array.from({ length: count }, (_, index) => ({
   _id: String(index), name: `Uniform ${index}`, price: index,
@@ -46,14 +56,18 @@ const products = count => Array.from({ length: count }, (_, index) => ({
 const context = overrides => ({
   products: products(50), search: '', showSearch: false,
   setSearch() {}, setShowSearch() {}, getProductsData() {},
-  productsLoading: false, productError: '', ...overrides
+  productsLoading: false, productError: '', productCategories: [],
+  categoriesLoading: false, categoryError: '', getProductCategories() {},
+  ...overrides
 });
 const html = (items, url = '/collection', overrides = {}) => renderToStaticMarkup(
   react.createElement(router.MemoryRouter, { initialEntries: [url] },
     react.createElement(ShopContext.Provider, { value: context({ products: items, ...overrides }) },
       react.createElement(Collection)))
 );
-const cardIds = markup => [...markup.matchAll(/class="collection-product-card" href="\/product\/([^"?]+)"/g)].map(match => match[1]);
+const cardIds = markup => [
+  ...markup.matchAll(/class="[^"]*\bcollection-product-card\b[^"]*" href="\/product\/([^"?]+)"/g)
+].map(match => match[1]);
 const findAll = (element, predicate) => {
   if (!react.isValidElement(element)) return [];
   return [
@@ -62,6 +76,98 @@ const findAll = (element, predicate) => {
   ];
 };
 const find = (element, predicate) => findAll(element, predicate)[0];
+
+test('Featured badge follows the authoritative BestSeller boolean in every shared card presentation', () => {
+  for (const presentation of [{ home: true }, { collection: true }, { compact: true }, {}]) {
+    for (const enabled of [true, false, undefined, 'true']) {
+      const markup = renderToStaticMarkup(react.createElement(router.MemoryRouter, null,
+        react.createElement(ProductItem, {
+          id: 'badge-product', image: ['product.jpg'], name: 'Long product name for a school essential',
+          price: 123456789789, BestSeller: enabled, ...presentation
+        })));
+      assert.equal((markup.match(/FEATURED/g) || []).length, enabled === true ? 1 : 0);
+      assert.doesNotMatch(markup, /BEST SELLER/);
+      assert.match(markup, /href="\/product\/badge-product"/);
+      assert.match(markup, /123,456,789,789\.00/);
+      if (enabled === true) {
+        assert.match(markup, /bg-\[var\(--pamo-color-brand-yellow\)\]/);
+        assert.match(markup, /text-slate-950/);
+        assert.match(markup, /inline-flex max-w-full shrink-0/);
+      }
+    }
+  }
+});
+
+test('Collection badge updates after refreshed flags and stays specific to the represented group item', () => {
+  const anchor = { ...products(1)[0], _id: 'anchor', variantGroupId: 'anchor', optionLabel: 'Classic', groupTitle: 'Campus Shirts', BestSeller: false };
+  const sibling = { ...anchor, _id: 'sibling', optionLabel: 'Department', BestSeller: true };
+  assert.equal((html([anchor, sibling]).match(/FEATURED/g) || []).length, 0, 'Unflagged anchor does not inherit a sibling flag');
+  const featured = html([anchor, sibling], '/collection?featured=true');
+  assert.deepEqual(cardIds(featured), ['sibling']);
+  assert.equal((featured.match(/FEATURED/g) || []).length, 1);
+  const updated = html([{ ...anchor, BestSeller: true }, { ...sibling, BestSeller: false }]);
+  assert.deepEqual(cardIds(updated), ['anchor']);
+  assert.equal((updated.match(/FEATURED/g) || []).length, 1);
+  assert.equal((html([{ ...anchor, BestSeller: false }, { ...sibling, BestSeller: false }]).match(/FEATURED/g) || []).length, 0);
+});
+
+test('Homepage cards receive representative flags without changing grouping or recommendations', () => {
+  const anchor = { ...products(1)[0], _id: 'anchor', variantGroupId: 'anchor', optionLabel: 'Classic', groupTitle: 'Campus Shirts',
+    BestSeller: false, academicPrograms: ['BSIT'], sizes: ['M'], inventory: { M: 10 } };
+  const sibling = { ...anchor, _id: 'sibling', optionLabel: 'Department', BestSeller: true, inventory: { M: 20 } };
+  const render = (Component, items, theme) => renderToStaticMarkup(
+    react.createElement('div', { className: theme },
+      react.createElement(router.MemoryRouter, null,
+        react.createElement(ShopContext.Provider, { value: context({ products: items, token: 'student', studentProfile: { academicProgram: 'BSIT' } }) },
+          react.createElement(Component))))
+  );
+  for (const theme of ['light', 'dark']) {
+    const latest = render(LatestCollection, [anchor, sibling], theme);
+    assert.match(latest, /href="\/product\/anchor"/);
+    assert.doesNotMatch(latest, /FEATURED/);
+    const recommended = render(ProgramRecommendations, [anchor, sibling], theme);
+    assert.match(recommended, /href="\/product\/sibling"/);
+    assert.equal((recommended.match(/FEATURED/g) || []).length, 1);
+    assert.doesNotMatch(render(ProgramRecommendations, [anchor, { ...sibling, BestSeller: false }], theme), /FEATURED/);
+    assert.equal((render(LatestCollection, [{ ...anchor, BestSeller: true }, sibling], theme).match(/FEATURED/g) || []).length, 1);
+  }
+});
+
+test('managed labels override defaults while archived options remain unavailable for new assignments', () => {
+  const categories = [
+    { name: 'Information Technology', code: 'BSIT', scope: 'program' },
+    { name: 'Hospitality Management', code: 'BSHM', scope: 'program', active: false },
+    { name: 'Digital Arts', code: 'digital-arts', scope: 'program' },
+    { name: 'School Supplies', code: 'school-supplies', scope: 'general' },
+    { name: 'Uniform Tops', code: 'TOP', scope: 'general' },
+    { name: 'Menswear', code: 'Men', scope: 'gender' },
+    { name: 'Womenswear', code: 'Women', scope: 'gender', active: false },
+    { name: 'Unisex', code: 'unisex', scope: 'gender' },
+    { name: 'Retired Program', code: 'retired-program', scope: 'program', active: false },
+    { name: 'Extras', code: 'EXTRA', scope: 'general' },
+    { name: 'Tops', code: 'tops', scope: 'program' },
+    { name: 'Tops', code: 'tops-general', scope: 'general' },
+  ];
+  const programValues = getAcademicProgramOptions(categories).map(option => option.value);
+  const merchandiseValues = getMerchandiseCategoryOptions(categories).map(option => option.value);
+  const genderOptions = getGenderOptions(categories);
+
+  assert.equal(programValues.includes('digital-arts'), true);
+  assert.equal(programValues.includes('BSHM'), false);
+  assert.equal(programValues.includes('EXTRA'), false);
+  assert.equal(programValues.includes('school-supplies'), false);
+  assert.equal(programValues.includes('retired-program'), false);
+  assert.equal(programValues.includes('tops'), false);
+  assert.deepEqual(merchandiseValues, ['TOP', 'BOTTOM', 'EXTRA', 'school-supplies', 'tops-general']);
+  assert.deepEqual(genderOptions, [
+    { value: 'Men', label: 'Menswear' },
+    { value: 'unisex', label: 'Unisex' },
+  ]);
+  assert.equal(getAcademicProgramName(categories, 'BSIT'), 'Information Technology');
+  assert.equal(getAcademicProgramName(categories, 'BSHM'), 'Hospitality Management');
+  assert.equal(getProductCategoryName(categories, 'TOP'), 'Uniform Tops');
+  assert.equal(getProductGenderName(categories, 'Men'), 'Menswear');
+});
 
 // Run the actual component's handlers/effects with persistent hook slots and
 // React Router's real memory history. No DOM, API or database is contacted.
@@ -147,11 +253,32 @@ const harness = (t, entries = ['/collection'], overrides = {}) => {
   };
 };
 
+test('color groups collapse after actual filters and before pagination/counts', t => {
+  const catalog = products(26);
+  for (const item of catalog.slice(0, 3)) {
+    item.variantGroupId = '0';
+    item.colorLabel = `Color ${item._id}`;
+  }
+  catalog[0].groupTitle = 'Color shirts';
+  const h = harness(t, ['/collection?page=2'], { products: catalog });
+  assert.equal(h.cards().length, 24);
+  assert.equal(h.params().get('page'), null, '26 products become 24 listings on one page');
+  assert.equal(h.cards().filter(card => card.props.name === 'Color shirts').length, 1);
+});
+
+test('group filters cannot combine gender/program matches from different colors', t => {
+  const catalog = products(2);
+  catalog[0] = { ...catalog[0], variantGroupId: '0', groupTitle: 'Shared listing', colorLabel: 'Yellow', category: 'Men', subCategory: 'BSIT' };
+  catalog[1] = { ...catalog[1], variantGroupId: '0', colorLabel: 'Green', category: 'Women', subCategory: 'SHS' };
+  const h = harness(t, ['/collection?gender=Women&program=BSIT'], { products: catalog });
+  assert.equal(h.cards().length, 0);
+});
+
 for (const count of [0, 1, 23, 24, 25, 48, 49, 1000, 10000]) {
   test(`${count} products render at most 24 cards with full result counts`, () => {
     const markup = html(products(count));
     assert.equal(cardIds(markup).length, Math.min(count, 24));
-    assert.match(markup, new RegExp(`<strong>${count}</strong>`));
+    assert.match(markup, new RegExp(`<strong[^>]*>${count}</strong>`));
     if (count) assert.match(markup, new RegExp(`Showing 1[–-]${Math.min(count, 24)} of ${count}`));
     else assert.match(markup, /No essentials available/);
     assert.equal(markup.includes('aria-label="Next product page"'), count > 24);
@@ -174,9 +301,199 @@ test('search, repeated OR filters, AND across groups and featured filtering prec
     && ['Men', 'Women'].includes(item.category) && ['BSIT', 'SHS'].includes(item.subCategory));
   const url = '/collection?q=UNIFORM&gender=Men&gender=Women&gender=Men&gender=invalid&program=BSIT&program=SHS&featured=true&page=2';
   assert.deepEqual(cardIds(html(items, url)), expected.slice(24, 48).map(item => item._id));
-  assert.match(html(items, url), new RegExp(`<strong>${expected.length}</strong>`));
+  assert.match(html(items, url), new RegExp(`<strong[^>]*>${expected.length}</strong>`));
   assert.deepEqual(cardIds(html(items, '/collection?gender=Men&program=SHS')),
     items.filter(item => item.category === 'Men' && item.subCategory === 'SHS').slice(0, 24).map(item => item._id));
+});
+
+test('Program and Merchandise filters use their authoritative fields and preserve legacy EXTRA', () => {
+  const items = [
+    { ...products(1)[0], _id: 'legacy', subCategory: 'BSIT' },
+    { ...products(1)[0], _id: 'dynamic-program', subCategory: 'digital-arts' },
+    { ...products(1)[0], _id: 'general', subCategory: 'SHS', productCategoryCode: 'school-supplies' },
+    { ...products(1)[0], _id: 'legacy-extra', subCategory: 'EXTRA' },
+    { ...products(1)[0], _id: 'classified-extra', subCategory: null, productCategoryCode: 'EXTRA' },
+    { ...products(1)[0], _id: 'tops', subCategory: 'BSIT', productCategoryCode: 'TOP' },
+    { ...products(1)[0], _id: 'bottoms', subCategory: 'BSHM', productCategoryCode: 'BOTTOM' },
+  ];
+  const productCategories = [
+    { name: 'Information Technology', code: 'BSIT', scope: 'program' },
+    { name: 'Digital Arts', code: 'digital-arts', scope: 'program' },
+    { name: 'School Supplies', code: 'school-supplies', scope: 'general' },
+    { name: 'Uniform Tops', code: 'TOP', scope: 'general' },
+    { name: 'Menswear', code: 'Men', scope: 'gender' },
+    { name: 'Extras', code: 'EXTRA', scope: 'general' },
+    { name: 'Retired Program', code: 'retired-program', scope: 'program', active: false },
+  ];
+
+  assert.deepEqual(
+    cardIds(html(items, '/collection?program=BSIT', { productCategories })),
+    ['legacy', 'tops'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?program=digital-arts', { productCategories })),
+    ['dynamic-program'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?merchandise=school-supplies', { productCategories })),
+    ['general'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?merchandise=EXTRA', { productCategories })),
+    ['legacy-extra', 'classified-extra'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?merchandise=TOP', { productCategories })),
+    ['tops'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?merchandise=BOTTOM', { productCategories })),
+    ['bottoms'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?gender=Men&program=SHS&merchandise=school-supplies', { productCategories })),
+    ['general'],
+  );
+  const markup = html(items, '/collection', { productCategories });
+  const academicFilters = markup.slice(
+    markup.indexOf('Academic program'),
+    markup.indexOf('Merchandise category'),
+  );
+  const merchandiseFilters = markup.slice(
+    markup.indexOf('Merchandise category'),
+    markup.indexOf('Need something specific?'),
+  );
+  assert.match(academicFilters, /Digital Arts/);
+  assert.match(academicFilters, /Information Technology/);
+  assert.doesNotMatch(academicFilters, /EXTRA|Retired Program/);
+  assert.match(merchandiseFilters, /School Supplies/);
+  assert.match(merchandiseFilters, />Uniform Tops</);
+  assert.match(merchandiseFilters, />Bottoms</);
+  assert.equal((merchandiseFilters.match(/>Extras</g) || []).length, 1);
+  assert.doesNotMatch(merchandiseFilters, /value="extra"/);
+  assert.match(markup, />Menswear</);
+  assert.deepEqual(
+    cardIds(html(items, '/collection?gender=Men&program=BSIT&merchandise=TOP', { productCategories })),
+    ['tops'],
+    'Renamed display labels must not change stable filter identities',
+  );
+});
+
+test('multi-value classifications preserve OR within groups, AND across groups, and explicit clearing', () => {
+  const base = products(1)[0];
+  const multi = {
+    ...base,
+    _id: 'multi',
+    category: 'Men',
+    subCategory: 'BSIT',
+    productCategoryCode: 'TOP',
+    academicPrograms: ['BSIT', 'BSCpE', 'digital-arts'],
+    genders: ['Men', 'Women'],
+    merchandiseCategoryCodes: ['TOP', 'BOTTOM', 'school-supplies'],
+  };
+  const legacy = { ...base, _id: 'legacy-scalar', category: 'Women', subCategory: 'BSHM', productCategoryCode: 'BOTTOM' };
+  const explicitlyCleared = {
+    ...base,
+    _id: 'cleared',
+    category: 'Women',
+    subCategory: 'BSCpE',
+    productCategoryCode: 'BOTTOM',
+    academicPrograms: [],
+    genders: [],
+    merchandiseCategoryCodes: [],
+  };
+  const items = [multi, multi, legacy, explicitlyCleared];
+  const productCategories = [
+    { name: 'Digital Arts', code: 'digital-arts', scope: 'program' },
+    { name: 'School Supplies', code: 'school-supplies', scope: 'general' },
+  ];
+
+  assert.deepEqual(cardIds(html(items, '/collection?program=BSCpE', { productCategories })), ['multi']);
+  assert.deepEqual(cardIds(html(items, '/collection?program=digital-arts', { productCategories })), ['multi']);
+  assert.deepEqual(cardIds(html(items, '/collection?gender=Women', { productCategories })), ['multi', 'legacy-scalar']);
+  assert.deepEqual(cardIds(html(items, '/collection?merchandise=BOTTOM', { productCategories })), ['multi', 'legacy-scalar']);
+  assert.deepEqual(
+    cardIds(html(items, '/collection?gender=Women&program=BSCpE&merchandise=BOTTOM', { productCategories })),
+    ['multi'],
+  );
+  assert.deepEqual(
+    cardIds(html(items, '/collection?program=BSIT&program=BSCpE', { productCategories })),
+    ['multi'],
+  );
+  assert.deepEqual(cardIds(html(items, '/collection?program=BSHM', { productCategories })), ['legacy-scalar']);
+});
+
+test('active dynamic Programs remain filterable before any product is assigned', () => {
+  const productCategories = [
+    { name: 'Media Arts', code: 'media-arts', scope: 'program' },
+  ];
+  const markup = html(products(3), '/collection?program=media-arts', { productCategories });
+
+  assert.match(markup, /Media Arts/);
+  assert.match(markup, /No matching essentials/);
+  assert.deepEqual(cardIds(markup), []);
+});
+
+test('product cards present resolved dynamic category names and tolerate unknown codes', () => {
+  const resolved = renderToStaticMarkup(
+    react.createElement(
+      router.MemoryRouter,
+      {},
+      react.createElement(ProductItem, {
+        id: 'dynamic',
+        name: 'Dynamic Uniform',
+        image: [],
+        price: 500,
+        category: 'Men',
+        subCategory: 'BSIT',
+        productCategoryName: 'Digital Arts',
+        collection: true,
+      }),
+    ),
+  );
+  const unknown = renderToStaticMarkup(
+    react.createElement(
+      router.MemoryRouter,
+      {},
+      react.createElement(ProductItem, {
+        id: 'unknown',
+        name: 'Legacy Uniform',
+        image: [],
+        price: 500,
+        category: 'Women',
+        subCategory: 'SHS',
+        productCategoryName: 'retired-category',
+        collection: true,
+      }),
+    ),
+  );
+
+  assert.match(resolved, /Men.*BSIT.*Digital Arts/);
+  assert.match(unknown, /Women.*retired-category/);
+});
+
+test('product cards summarize multiple classifications without losing the full accessible label', () => {
+  const markup = renderToStaticMarkup(
+    react.createElement(
+      router.MemoryRouter,
+      {},
+      react.createElement(ProductItem, {
+        id: 'multi-card',
+        name: 'Multi Program Uniform',
+        image: [],
+        price: 500,
+        genders: ['Men', 'Women'],
+        academicPrograms: ['BSIT', 'BSCpE', 'BSBAOM'],
+        merchandiseCategoryCodes: ['TOP', 'BOTTOM'],
+        academicProgramNames: ['BSIT', 'BSCpE', 'BSBAOM'],
+        productCategoryNames: ['Tops', 'Bottoms'],
+        collection: true,
+      }),
+    ),
+  );
+
+  assert.match(markup, /Men, Women.*BSIT, BSCpE \+1.*Tops, Bottoms/);
+  assert.match(markup, /title="Men · Women · BSIT · BSCpE · BSBAOM · Tops · Bottoms"/);
 });
 
 test('sorting spans page boundaries, preserves relevant order and stable equal-price order', () => {
@@ -282,15 +599,22 @@ test('all user criteria handlers reset the page while preserving their existing 
     h.click(label);
     assert.equal(h.params().has('page'), false);
   }
-  for (const clearClass of ['collection-clear-action', undefined]) {
-    await pageTwo();
-    const clear = find(h.render(), element => element.type === 'button' && element.props.children === 'Clear all' && element.props.className === clearClass);
-    clear.props.onClick();
-    h.render();
-    assert.equal(h.params().has('page'), false);
-    assert.equal(h.params().get('keep'), 'yes');
-    assert.equal(h.params().has('q'), clearClass === undefined);
-  }
+  await pageTwo();
+  let clearButtons = findAll(h.render(), element => element.type === 'button' && element.props.children === 'Clear all');
+  assert.equal(clearButtons.length >= 2, true);
+  clearButtons[0].props.onClick();
+  h.render();
+  assert.equal(h.params().has('page'), false);
+  assert.equal(h.params().get('keep'), 'yes');
+  assert.equal(h.params().has('q'), true);
+
+  await pageTwo();
+  clearButtons = findAll(h.render(), element => element.type === 'button' && element.props.children === 'Clear all');
+  clearButtons.at(-1).props.onClick();
+  h.render();
+  assert.equal(h.params().has('page'), false);
+  assert.equal(h.params().get('keep'), 'yes');
+  assert.equal(h.params().has('q'), false);
 });
 
 test('catalog shrink clamps with replace; pending or failed loads do not erase restoration URLs', t => {
@@ -364,7 +688,23 @@ test('card props/keys, lazy images, missing-image fallback, messages and retry r
   let refreshes = 0;
   const h = harness(t, ['/collection?page=2'], { products: items, getProductsData: () => { refreshes++; } });
   const card = h.cards()[0];
-  assert.deepEqual(card.props, { id: '24', name: 'Uniform 24', image: [], price: 24, category: 'Men', subCategory: 'BSIT', collection: true });
+  assert.deepEqual(card.props, {
+    id: '24',
+    name: 'Uniform 24',
+    image: [],
+    price: 24,
+    priceFrom: undefined,
+    BestSeller: true,
+    category: 'Men',
+    subCategory: 'BSIT',
+    academicPrograms: ['BSIT'],
+    genders: ['Men'],
+    genderNames: ['Men'],
+    merchandiseCategoryCodes: [],
+    academicProgramNames: ['BSIT'],
+    productCategoryNames: [],
+    collection: true
+  });
   assert.ok(card.key.endsWith('$24'));
   h.value.productError = 'Synthetic failure';
   find(h.render(), element => element.type === 'button' && element.props.children === 'Try again').props.onClick();
@@ -376,7 +716,7 @@ test('rendered card markup, image behavior and loading/error/empty presentation 
   const markup = html(items, '/collection?page=2');
   const card = renderToStaticMarkup(react.createElement(router.MemoryRouter, {}, react.createElement(ProductItem, {
     id: items[24]._id, name: items[24].name, image: items[24].image, price: items[24].price,
-    category: items[24].category, subCategory: items[24].subCategory, collection: true
+    category: items[24].category, subCategory: items[24].subCategory, BestSeller: items[24].BestSeller, collection: true
   })));
   assert.ok(markup.includes(card));
   assert.match(markup, /alt="Uniform 24" loading="lazy"/);

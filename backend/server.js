@@ -10,6 +10,8 @@ import cartRouter from './routes/cartRoute.js'
 import orderRouter from './routes/orderRoute.js'
 import dashboardRouter from './routes/dashboardRoute.js'
 import heroRouter, { heroErrorHandler } from './routes/heroRoute.js'
+import announcementRouter from './routes/announcementRoute.js'
+import categoryRouter from './routes/categoryRoute.js'
 import { apiErrorHandler } from './middleware/apiErrorHandler.js'
 import { configureLocalApiSecurity, LOCAL_API_HOST } from './config/localApiSecurity.js'
 
@@ -21,6 +23,17 @@ const port = process.env.PORT || 4000
 // middlewares
 configureLocalApiSecurity(app)
 app.use(express.json())
+// Vercel imports this app without calling startServer. Resolve infrastructure
+// before API handlers use models; concurrent requests share MongoDB readiness.
+app.use('/api', async (_req, res, next) => {
+    try {
+        await connectCloudinary()
+        await connectDB()
+        next()
+    } catch {
+        res.status(503).json({ success: false, message: 'Service is temporarily unavailable. Please try again.' })
+    }
+})
 
 // api endpoints
 app.use('/api/user',userRouter)
@@ -29,6 +42,8 @@ app.use('/api/cart', cartRouter)
 app.use('/api/order', orderRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/hero', heroRouter, heroErrorHandler)
+app.use('/api/announcement', announcementRouter)
+app.use('/api/category', categoryRouter)
 
 app.get('/',(req,res)=>{
     res.send("API WORKING")

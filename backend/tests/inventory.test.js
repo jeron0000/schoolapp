@@ -13,10 +13,26 @@ import { addProduct, updateStock, listProducts, removeProduct } from '../control
 import { addToCart } from '../controllers/cartController.js';
 import { confirmCashierPayment } from '../controllers/cashierController.js';
 import { validateInitialInventory, aggregateOrderItems, createReservedOrder, cancelReservedOrder, adjustInventory } from '../utils/inventory.js';
-import { getSizeStock, getTotalStock, getStockLabel } from '../../shared/inventory.js';
+import { getInventorySizes, getSizeStock, getTotalStock, getStockLabel } from '../../shared/inventory.js';
 
 const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
 const id = '0123456789abcdef01234567';
+
+test('size display uses canonical order without changing saved sizes or stock quantities', () => {
+    const product = {
+        sizes: ['XL', 'S', 'L', 'M'],
+        inventory: { XL: 4, S: 1, L: 3, M: 2 }
+    };
+    const original = structuredClone(product);
+    assert.deepEqual(getInventorySizes(product), ['S', 'M', 'L', 'XL']);
+    assert.deepEqual(getInventorySizes(product).map(size => getSizeStock(product, size)), [1, 2, 3, 4]);
+    assert.equal(getTotalStock(product), 10);
+    assert.deepEqual(product, original);
+    assert.deepEqual(getInventorySizes({ sizes: ['Custom B', 'One Size', 'XXL', 'S', 'Custom A'] }),
+        ['S', 'XXL', 'One Size', 'Custom B', 'Custom A']);
+    assert.deepEqual(getInventorySizes({ sizes: [] }), ['One Size']);
+    assert.deepEqual(getInventorySizes({}), ['One Size']);
+});
 
 test('initial stock accepts zero and rejects invalid numbers, sizes and extra entries', () => {
     assert.deepEqual(validateInitialInventory(['M'], { M: 0 }), { M: 0 });
@@ -56,7 +72,7 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
     const data = (product, quantity = 2, method = 'COD') => ({ userId: String(user._id), requestId: randomUUID(), items: [{ _id: String(product._id), size: 'M', quantity, price: 1 }], address: { firstName: 'Inventory', lastName: 'Test', email: 'inventory@example.test', phone: '09171234567', street: '123 Campus Road', city: 'Carmona', state: 'Cavite', zipcode: '4116', country: 'Philippines' }, amount: 1, paymentMethod: method, payment: false, date: Date.now() });
     const call = async (handler, body) => { const res = response(); await handler({ body, headers: { origin: 'http://localhost:5173' }, staff: { identity: 'inventory-test' } }, res); return res; };
     try {
-        user = await userModel.create({ name: 'Inventory test', email: database + '@example.test', password: 'test-only' });
+        user = await userModel.create({ name: 'Inventory test', email: database + '@example.test', password: 'test-only', academicProgram: 'BSIT' });
         await t.test('Add Item persists selected-size inventory; public list exposes it', async () => {
             const res = await call((req, res) => addProduct({ ...req, files: {} }, res), { name: 'Initial stock fixture', description: 'Test', price: '225', category: 'Men', subCategory: 'BSIT', sizes: '["M","L"]', inventory: '{"M":5,"L":0}' });
             assert.equal(res.body.success, true);
@@ -106,7 +122,7 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
             await assert.rejects(createReservedOrder(request), /Insufficient stock/);
             assert.equal(await stock(first), 5);
             assert.equal(await orderModel.countDocuments({ requestId: request.requestId }), 0);
-            const invalid = data(first); delete invalid.address;
+            const invalid = data(first); delete invalid.items;
             await assert.rejects(createReservedOrder(invalid));
             assert.equal(await stock(first), 5);
         });
@@ -195,10 +211,13 @@ test('transactional inventory lifecycle on isolated MongoDB database', { skip: p
             assert.equal((await call(controllers.updateStatus, { orderId: String(order._id), status: 'Approved' })).code, 409);
             assert.equal(await stock(product), 10);
         });
-        await t.test('paid pre-approval cancellation preserves payment records; legacy cancellation does not invent stock', async () => {
+        await t.test('paid cancellation review preserves payment records; legacy cancellation does not invent stock', async () => {
             const product = await fixture(10);
             const paid = await createReservedOrder({ ...data(product, 2, 'Stripe'), payment: true, paidAt: 123456, receiptNumber: 'paid-cancel-' + randomUUID() });
-            const res = await call(controllers.cancelCustomerOrder, { orderId: String(paid._id), userId: String(user._id) });
+            const requested = await call(controllers.requestCustomerCancellation, { orderId: String(paid._id), userId: String(user._id), reason: 'Unable to collect.' });
+            assert.equal(requested.body.success, true);
+            assert.equal(await stock(product), 8);
+            const res = await call(controllers.reviewCancellation, { orderId: String(paid._id), requestId: String(requested.body.order.cancellationRequest._id), decision: 'approve' });
             assert.equal(res.body.success, true);
             const stored = await orderModel.findById(paid._id);
             assert.equal(stored.payment, true);

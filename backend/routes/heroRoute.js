@@ -3,13 +3,16 @@ import multer from 'multer';
 import adminAuth from '../middleware/adminAuth.js';
 import heroUpload from '../middleware/heroUpload.js';
 import { HeroImageError } from '../utils/heroImages.js';
-import { listHeroSlides, listAllHeroSlides, addHeroSlide, updateHeroSlide, removeHeroSlide, reorderHeroSlides } from '../controllers/heroController.js';
+import { listHeroSlides, listAllHeroSlides, addHeroSlide, updateHeroSlide, removeHeroSlide, reorderHeroSlides, setDefaultHeroSlide, replaceFallbackHeroImage, resetFallbackHeroImage } from '../controllers/heroController.js';
 
 const heroRouter = express.Router();
 heroRouter.get('/list', listHeroSlides);
 heroRouter.get('/admin/list', adminAuth, listAllHeroSlides);
 heroRouter.post('/add', adminAuth, heroUpload, addHeroSlide);
+heroRouter.put('/fallback', adminAuth, heroUpload, replaceFallbackHeroImage);
+heroRouter.delete('/fallback', adminAuth, resetFallbackHeroImage);
 heroRouter.patch('/reorder', adminAuth, reorderHeroSlides);
+heroRouter.patch('/:id/default', adminAuth, setDefaultHeroSlide);
 heroRouter.patch('/:id', adminAuth, updateHeroSlide);
 heroRouter.delete('/:id', adminAuth, removeHeroSlide);
 

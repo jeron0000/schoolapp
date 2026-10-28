@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { CATEGORY_CODE_PATTERN } from './categoryModel.js';
+import { isBuiltInMerchandiseCategory } from '../../shared/productTaxonomy.js';
 
 // Optional: historical orders receive no inferred provider identity or evidence.
 const stripePaymentSchema = new mongoose.Schema({
@@ -59,11 +61,30 @@ const paymentRecoverySchema = new mongoose.Schema({
     decisions: { type: [recoveryDecisionSchema], required: true, default: undefined }
 }, { _id: false, strict: 'throw' });
 
+const studentSnapshotSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    // The controller validates the assigned managed program. Snapshots retain
+    // its stable code even after a rename or archive.
+    academicProgram: {
+        type: String, match: CATEGORY_CODE_PATTERN, required: true,
+        validate: value => !isBuiltInMerchandiseCategory(value)
+    }
+}, { _id: false, strict: 'throw' });
+
 const orderSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     items: { type: Array, required: true },
     amount: { type: Number, required: true },
-    address: { type: Object, required: true },
+    // Historical delivery orders retain their address. New student orders are
+    // campus pickup records and carry an authenticated account snapshot instead.
+    address: { type: Object, required() { return !this.student } },
+    student: { type: studentSnapshotSchema, required() { return !this.address } },
+    fulfillmentMethod: {
+        type: String,
+        enum: ['campus_pickup'],
+        required() { return Boolean(this.student) }
+    },
     status: { type: String, required: true, default:'Order Placed' },
     paymentMethod: { type: String, required: true },
     paymentCurrency: { type: String },
@@ -71,12 +92,26 @@ const orderSchema = new mongoose.Schema({
     paypalPayment: { type: paypalPaymentSchema },
     paymentRecovery: { type: paymentRecoverySchema },
     payment: { type: Boolean, required: true, default: false },
+    demoPayment: { type: new mongoose.Schema({
+        mode: { type: String, enum: ['demo'], required: true },
+        provider: { type: String, enum: ['stripe', 'paypal'], required: true },
+        status: { type: String, enum: ['pending', 'succeeded', 'failed', 'cancelled'], required: true },
+        transactionId: { type: String, match: /^DEMO-(STRIPE|PAYPAL)-[a-f0-9-]{36}$/ }
+    }, { _id: false, strict: 'throw' }) },
     sentToCashierAt: { type: Number },
     receiptNumber: { type: String },
     paidAt: { type: Number },
     confirmedBy: { type: String },
     inventoryStatus: { type: String, enum: ['reserved', 'released'] },
     cancellationSource: { type: String, enum: ['customer', 'admin'] },
+    cancelledAt: { type: Number },
+    cancellationRequest: { type: new mongoose.Schema({
+        status: { type: String, enum: ['pending', 'approved', 'rejected'], required: true },
+        reason: { type: String, required: true, maxlength: 1000 },
+        requestedAt: { type: Number, required: true },
+        reviewedAt: { type: Number },
+        rejectionReason: { type: String, maxlength: 1000 }
+    }, { strict: 'throw' }) },
     // Optional, one obligation per order. Later states require a separately
     // authorized refund initiation/confirmation process and evidence schema.
     refund: { type: new mongoose.Schema({

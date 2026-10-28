@@ -29,7 +29,10 @@ const fixture = (t, initialize = async () => 'cashier_receipt_unique') => {
     t.mock.method(orderModel, 'findOneAndUpdate', async (filter, update, options) => {
         writes.push({ filter, update, options });
         const current = rows.get(filter._id);
-        if (Object.entries(filter).some(([key, value]) => current[key] !== value)) return null;
+        if (Object.entries(filter).some(([key, value]) => {
+            if (key === 'cancellationRequest.status') return current.cancellationRequest?.status === value.$ne;
+            return current[key] !== value;
+        })) return null;
         Object.assign(current, update.$set);
         return { ...current };
     });
@@ -57,9 +60,10 @@ test('receipt readiness preserves the exact partial unique index and payment CAS
     }]]);
     assert.deepEqual(f.writes[0].filter, {
         _id: ids[0], status: 'Sent to Cashier', payment: false,
-        paymentMethod: 'COD', amount: 70.3, paymentCurrency: 'PHP'
+        paymentMethod: 'COD', amount: 70.3, paymentCurrency: 'PHP',
+        'cancellationRequest.status': { $ne: 'pending' }
     });
-    assert.deepEqual(f.writes[0].options, { new: true, runValidators: true });
+    assert.deepEqual(f.writes[0].options, { returnDocument: 'after', runValidators: true });
     assert.deepEqual(Object.keys(f.writes[0].update.$set).sort(), [
         'confirmedBy', 'paidAt', 'payment', 'paymentMethod', 'receiptNumber', 'status'
     ]);
