@@ -84,13 +84,7 @@ const Hero = () => {
           </p>
           <h1 id='home-hero-heading' className={headlineClass}>
             <span className='block'>School uniforms,</span>
-            <span className='relative mt-1 inline-block pb-3'>
-              made easier.
-              <span
-                className='absolute bottom-0 left-1/2 h-1.5 w-[48%] -translate-x-1/2 rounded-full bg-[var(--pamo-color-brand-yellow)] sm:left-0 sm:translate-x-0'
-                aria-hidden='true'
-              />
-            </span>
+            <span className='mt-1 inline-block pb-3'>made easier.</span>
           </h1>
           <p className={descriptionClass}>
             Browse, order, and claim your school essentials with less waiting. Everything for campus, in one place.
