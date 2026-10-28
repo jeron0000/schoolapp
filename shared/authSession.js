@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { validAuthClaims } from './authPolicy.js';
 
 export const SESSION_MESSAGE = 'Your session is invalid or expired. Please sign in again.';
+const BROWSER_ISSUED_AT_TOLERANCE = 60;
 
 const roleMatchesScope = (role, scope) => {
   if (scope === 'customer') {
@@ -23,7 +24,8 @@ export const sessionClaims = (token, scope) => {
     const decode = part => JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
     const header = decode(parts[0]);
     const claims = decode(parts[1]);
-    if (header.alg !== 'HS256' || !validAuthClaims(claims)) {
+    // Browser time may lag server time. Expiration remains strict; only iat gets a small UX tolerance.
+    if (header.alg !== 'HS256' || !validAuthClaims(claims, Math.floor(Date.now() / 1000), BROWSER_ISSUED_AT_TOLERANCE)) {
       return null;
     }
     if (!roleMatchesScope(claims.role, scope)) {
@@ -111,13 +113,13 @@ export const useAuthSession = (client, backendUrl, scope, onSessionEnd = noSessi
   const [session, setSession] = useState(() => {
     const saved = storedToken();
     const token = sessionClaims(saved, scope) ? saved : '';
-    return { token, message: saved && !token ? SESSION_MESSAGE : '' };
+    return { token, message: '' };
   });
   const monitor = useRef(null);
   const setToken = useCallback(nextToken => {
     const token = sessionClaims(nextToken, scope) ? nextToken : '';
     if (token && monitor.current?.token === token) {
-      return;
+      return true;
     }
     monitor.current?.stop();
     monitor.current = null;
@@ -126,6 +128,7 @@ export const useAuthSession = (client, backendUrl, scope, onSessionEnd = noSessi
       onSessionEnd();
     }
     setSession({ token, message: nextToken && !token ? SESSION_MESSAGE : '' });
+    return Boolean(token);
   }, [scope, onSessionEnd]);
 
   const invalidateSession = useCallback(expectedToken => {
@@ -146,9 +149,7 @@ export const useAuthSession = (client, backendUrl, scope, onSessionEnd = noSessi
 
   useEffect(() => {
     if (!session.token) {
-      if (session.message) {
-        persistToken('');
-      }
+      persistToken('');
       return;
     }
     const stop = monitorSession({

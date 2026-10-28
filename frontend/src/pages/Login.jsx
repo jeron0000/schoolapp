@@ -9,6 +9,7 @@ import "../components/StorefrontFoundation.css";
 import LoginFlow from "../../../shared/LoginFlow";
 import { loginDestination } from "../../../shared/loginNavigation";
 import { getAcademicProgramOptions } from "../../../shared/productTaxonomy.js";
+import { SESSION_MESSAGE } from "../../../shared/authSession.js";
 
 const Login = () => {
   const {
@@ -32,7 +33,7 @@ const Login = () => {
       credentials,
     );
     if (!data.success) throw new Error(data.message);
-    setToken(data.token);
+    if (!setToken(data.token)) throw new Error(SESSION_MESSAGE);
     navigate("/");
   };
 

@@ -8,13 +8,13 @@ const validSubject = (role, subject) => {
   return /^[a-f\d]{24}$/i.test(subject);
 };
 
-export const validAuthClaims = (claims, now = Math.floor(Date.now() / 1000)) => {
+export const validAuthClaims = (claims, now = Math.floor(Date.now() / 1000), issuedAtTolerance = 0) => {
   if (!claims || typeof claims !== 'object' || Array.isArray(claims)) return false;
   if (Object.keys(claims).sort().join(',') !== 'exp,iat,role,sub') return false;
   if (typeof claims.role !== 'string' || !Object.hasOwn(SESSION_SECONDS, claims.role)) return false;
   if (!validSubject(claims.role, claims.sub)) return false;
   if (!Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp)) return false;
-  if (claims.iat <= 0 || claims.iat > now || claims.exp <= now) return false;
+  if (claims.iat <= 0 || claims.iat > now + issuedAtTolerance || claims.exp <= now) return false;
   if (claims.exp <= claims.iat) return false;
   return claims.exp - claims.iat <= SESSION_SECONDS[claims.role];
 };

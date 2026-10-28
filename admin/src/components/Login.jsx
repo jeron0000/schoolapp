@@ -8,6 +8,7 @@ import ThemeToggle from './ThemeToggle'
 import '../../../shared/Foundation.css'
 import LoginFlow from '../../../shared/LoginFlow'
 import { adminPanelFromSearch, loginDestination } from '../../../shared/loginNavigation'
+import { SESSION_MESSAGE } from '../../../shared/authSession.js'
 
 const Login = ({ setToken }) => {
   const { pathname, search } = useLocation()
@@ -26,7 +27,7 @@ const Login = ({ setToken }) => {
   const authenticate = async ({ email, password }, { panel }) => {
     const { data } = await axios.post(backendUrl + '/api/user/admin', { email, password })
     if (!data.success) throw new Error(data.message)
-    setToken(data.token, panel)
+    if (!setToken(data.token, panel)) throw new Error(SESSION_MESSAGE)
   }
 
   if (!panel) return <p role='status' className='p-6 text-sm text-slate-600 dark:text-slate-400'>{error || 'Opening PAMO login…'}</p>

@@ -65,7 +65,8 @@ const App = () => {
 
   const updateSession = (nextToken, selectedPanel = panel) => {
     setAccess(null)
-    setToken(nextToken)
+    const established = setToken(nextToken)
+    if (nextToken && !established) return false
 
     if (!nextToken) {
       persistPanel(null)
@@ -77,6 +78,7 @@ const App = () => {
     setPanel(selectedPanel)
     persistPanel(selectedPanel)
     navigate(getPanelPath(selectedPanel), { replace: true })
+    return true
   }
 
   useEffect(() => {

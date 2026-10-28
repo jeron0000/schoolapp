@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Buffer } from 'node:buffer';
+import { issueAuthToken, verifyAuthToken } from '../../backend/utils/authTokens.js';
 
 const frontend = fileURLToPath(new URL('../', import.meta.url));
 const result = await build({
@@ -66,6 +67,18 @@ test('session restoration accepts proper role/expiry claims and rejects unsuppor
     makeToken('admin', { sub: userId }), makeToken('customer', { role: ['customer'] })]) {
     assert.equal(sessionClaims(token, 'customer'), null);
     assert.equal(sessionClaims(token, 'staff'), null);
+  }
+});
+
+test('fresh sessions for every role tolerate a browser clock up to 60 seconds behind the issuer', t => {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  t.mock.method(Date, 'now', () => (issuedAt - 30) * 1000);
+  for (const role of ['customer', 'admin', 'cashier']) {
+    const scope = role === 'customer' ? 'customer' : 'staff';
+    const token = makeToken(role, { iat: issuedAt, exp: issuedAt + 28800 });
+    assert.equal(sessionClaims(token, scope)?.role, role);
+    assert.equal(sessionClaims(makeToken(role, { iat: issuedAt + 31 }), scope), null);
+    assert.equal(sessionClaims(makeToken(role, { exp: issuedAt - 30 }), scope), null);
   }
 });
 
@@ -149,16 +162,51 @@ const hookHarness = (t, env, scope, onEnd = () => {}) => {
   };
 };
 
-test('hook removes stored legacy state and presents reauthentication feedback', t => {
+test('hook silently removes stale stored sessions on initial load', t => {
   const env = environment(t, 'legacy-expiryless-token');
   const hook = hookHarness(t, env, 'customer');
   const state = hook.render();
   assert.equal(state.token, '');
-  assert.equal(state.sessionMessage, SESSION_MESSAGE);
+  assert.equal(state.sessionMessage, '');
   hook.flush();
   assert.equal(env.storage.has('token'), false);
   assert.equal(env.timers.size, 0);
   assert.equal(env.handlers.size, 0);
+});
+
+test('real issued Student, Admin and Cashier tokens establish a session before navigation despite minor clock skew', async t => {
+  const previousSecret = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = 'synthetic-shared-session-regression-only';
+  t.after(() => {
+    if (previousSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousSecret;
+  });
+  for (const role of ['customer', 'admin', 'cashier']) {
+    await t.test(role, t => {
+      const token = issueAuthToken(role === 'admin' ? 'pamo-admin' : userId, role);
+      assert.equal(verifyAuthToken(token).role, role);
+      const browserTime = Date.now() - 30000;
+      t.mock.method(Date, 'now', () => browserTime);
+      const env = environment(t);
+      const scope = role === 'customer' ? 'customer' : 'staff';
+      const hook = hookHarness(t, env, scope);
+      let state = hook.render();
+      hook.flush();
+      assert.equal(state.setToken(token), true);
+      assert.equal(env.storage.get('token'), token);
+      state = hook.render();
+      assert.equal(state.token, token);
+      assert.equal(state.sessionMessage, '');
+      hook.flush();
+      assert.equal(state.isCurrentSession(token), true);
+      env.listeners.window.get('focus')();
+      assert.equal(hook.render().token, token);
+      assert.equal(state.setToken('invalid-fresh-login-token'), false);
+      assert.equal(env.storage.has('token'), false);
+      assert.equal(hook.render().sessionMessage, SESSION_MESSAGE);
+      hook.unmount();
+    });
+  }
 });
 
 test('hook restores valid state, supports login/logout, clears private cart and stops stale monitors immediately', async t => {
